@@ -1,0 +1,60 @@
+[project]
+name = "ai-work-manager"
+version = "0.1.0"
+description = "Autonomous AI Work Manager - a personal AI task manager that plans, works, reviews and reports on its own."
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.159.1",
+    "uvicorn[standard]>=0.54.0",
+    "sse-starlette>=3.5.0",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.1",
+    "python-dotenv>=1.2.4",
+    "sqlalchemy>=2.1.6",
+    "alembic>=1.20.1",
+    "langchain>=1.4.7",
+    "langchain-core>=1.6.13",
+    "langgraph>=1.2.16",
+    "langchain-openai>=1.7.2",
+    "langchain-anthropic>=1.7.6",
+    "langchain-google-genai>=4.4.2",
+    "mcp>=2.3.0",
+    "httpx>=0.28.1",
+]
+
+[project.scripts]
+aiwm = "app.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "ruff>=0.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008"]
