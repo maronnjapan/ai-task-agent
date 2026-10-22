@@ -28,10 +28,15 @@ class LocalApiProtectionMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, app_host: str, app_port: int, extra_hosts: set[str] | None = None):
         super().__init__(app)
         self.hosts = allowed_hosts(app_host, app_port) | (extra_hosts or set())
+        # Binding to all interfaces (e.g. WSL reached from the Windows host) is an explicit
+        # user choice; the Host check is relaxed but Origin and the CSRF header still apply.
+        self.any_host = app_host in ("0.0.0.0", "::", "")
 
     def _host_ok(self, value: str | None) -> bool:
         if not value:
             return False
+        if self.any_host:
+            return True
         return value.lower() in {h.lower() for h in self.hosts} or value.split(":")[0].lower() in {
             h.split(":")[0].lower() for h in self.hosts
         }
@@ -46,7 +51,8 @@ class LocalApiProtectionMiddleware(BaseHTTPMiddleware):
                 origin = request.headers.get("origin")
                 if origin:
                     parsed = urlparse(origin)
-                    if not self._host_ok(parsed.netloc):
+                    same_host = parsed.netloc.lower() == (host or "").lower()
+                    if not same_host and not (self._host_ok(parsed.netloc) and not self.any_host):
                         return JSONResponse(
                             {"detail": "Cross-origin requests are not allowed"}, status_code=403
                         )

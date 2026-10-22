@@ -34,6 +34,31 @@ def test_csrf_and_host_protection(ctx: AppContext):
         assert client.get("/api/tasks").status_code == 200
 
 
+def test_wildcard_bind_relaxes_host_but_keeps_origin_check(ctx: AppContext):
+    from app.main import create_app
+
+    ctx.settings.app_host = "0.0.0.0"
+    app = create_app(ctx, serve_frontend=False)
+    with TestClient(app) as client:
+        assert client.get("/api/tasks", headers={"Host": "172.20.0.5:8765"}).status_code == 200
+        ok = client.post(
+            "/api/tasks",
+            json={"title": "x"},
+            headers={
+                "X-Requested-With": "AIWM",
+                "Host": "172.20.0.5:8765",
+                "Origin": "http://172.20.0.5:8765",
+            },
+        )
+        assert ok.status_code == 201
+        bad = client.post(
+            "/api/tasks",
+            json={"title": "x"},
+            headers={"X-Requested-With": "AIWM", "Host": "172.20.0.5:8765", "Origin": "http://evil.example"},
+        )
+        assert bad.status_code == 403
+
+
 def test_task_endpoints(client: TestClient):
     cat = client.post("/api/categories", json={"name": "設計"}).json()
     created = client.post(
