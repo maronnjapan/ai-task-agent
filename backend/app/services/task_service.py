@@ -8,18 +8,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.events import EventBroker
-from app.models import (
-    Category,
-    ExecutionPlan,
-    RelatedPlanToTask,
-    Task,
-    TaskArtifact,
-    TaskChat,
-    TaskContext,
-    TaskVersion,
-    WorkItem,
-)
+from app.models import Category, Task, TaskArtifact, TaskContext, TaskVersion
 from app.models.enums import Actor, TaskStatus
+from app.repositories import CategoryRepository, MemoryRepository, TaskRepository
 from app.schemas.tasks import TaskCreate, TaskUpdate
 from app.services.audit_service import AuditService
 from app.services.errors import NotFoundError, ValidationError
@@ -54,13 +45,7 @@ class CategoryService:
         self.session = session
 
     def list(self) -> list[tuple[Category, int]]:
-        rows = self.session.execute(
-            select(Category, func.count(Task.id))
-            .outerjoin(Task, (Task.category_id == Category.id) & (Task.is_deleted.is_(False)))
-            .group_by(Category.id)
-            .order_by(Category.name)
-        ).all()
-        return [(row[0], int(row[1])) for row in rows]
+        return CategoryRepository(self.session).with_task_counts()
 
     def get(self, category_id: str) -> Category:
         category = self.session.get(Category, category_id)
@@ -72,8 +57,7 @@ class CategoryService:
         name = name.strip()
         if not name:
             raise ValidationError("Category name is required")
-        existing = self.session.execute(select(Category).where(Category.name == name)).scalar_one_or_none()
-        if existing is not None:
+        if CategoryRepository(self.session).by_name(name) is not None:
             raise ValidationError("Category already exists")
         category = Category(name=name)
         self.session.add(category)
@@ -90,13 +74,11 @@ class CategoryService:
         return category
 
     def delete(self, category_id: str) -> None:
-        from app.models import Memory
-
         category = self.get(category_id)
-        for task in self.session.execute(select(Task).where(Task.category_id == category_id)).scalars():
+        for task in CategoryRepository(self.session).tasks_in(category_id):
             task.category_id = None
         # Task memories keep their task; category memories lose their container and are deleted.
-        for memory in self.session.execute(select(Memory).where(Memory.category_id == category_id)).scalars():
+        for memory in MemoryRepository(self.session).by_category(category_id):
             if memory.scope == "task":
                 memory.category_id = None
             else:
@@ -131,30 +113,17 @@ class TaskService:
         offset: int = 0,
         order: str = "due",
     ) -> tuple[list[Task], int]:
-        stmt = select(Task)
-        if not include_deleted:
-            stmt = stmt.where(Task.is_deleted.is_(False))
-        if status:
-            statuses = [s.strip() for s in status.split(",") if s.strip()]
-            stmt = stmt.where(Task.status.in_(statuses))
-        elif not include_completed:
-            stmt = stmt.where(Task.status != TaskStatus.COMPLETED)
-        if category_id:
-            stmt = stmt.where(Task.category_id == category_id)
-        if assignee:
-            stmt = stmt.where(Task.assignee == assignee)
-        if search:
-            like = f"%{search}%"
-            stmt = stmt.where(Task.title.like(like) | Task.description.like(like))
-        total = self.session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
-        if order == "created":
-            stmt = stmt.order_by(Task.created_at.desc())
-        elif order == "updated":
-            stmt = stmt.order_by(Task.updated_at.desc())
-        else:
-            stmt = stmt.order_by(Task.due_at.is_(None), Task.due_at.asc(), Task.created_at.asc())
-        rows = self.session.execute(stmt.limit(limit).offset(offset)).scalars().all()
-        return list(rows), int(total)
+        return TaskRepository(self.session).list(
+            limit=limit,
+            offset=offset,
+            status=status,
+            category_id=category_id,
+            assignee=assignee,
+            search=search,
+            include_deleted=include_deleted,
+            include_completed=include_completed,
+            order=order,
+        )
 
     def active_tasks(self) -> list[Task]:
         rows, _ = self.list(include_completed=False, limit=10_000)
@@ -162,32 +131,19 @@ class TaskService:
 
     def decorate(self, task: Task) -> dict[str, Any]:
         """Extra UI fields: AI activity, pending artifact count, active plan, chat count."""
+        repo = TaskRepository(self.session)
         data: dict[str, Any] = {
             "category_name": task.category.name if task.category else None,
-            "pending_artifacts": 0,
+            "pending_artifacts": repo.pending_artifact_count(task.id),
             "active_plan_id": None,
             "ai_activity": None,
-            "open_chats": 0,
+            "open_chats": repo.chat_count(task.id),
         }
-        plan_row = (
-            self.session.execute(
-                select(ExecutionPlan)
-                .join(RelatedPlanToTask, RelatedPlanToTask.execution_plan_id == ExecutionPlan.id)
-                .where(RelatedPlanToTask.task_id == task.id)
-                .where(ExecutionPlan.status.in_(["planned", "running", "reviewing"]))
-                .order_by(ExecutionPlan.created_at.desc())
-            )
-            .scalars()
-            .first()
-        )
+        plan_row = repo.active_plan(task.id)
         if plan_row is not None:
             data["active_plan_id"] = plan_row.id
             if plan_row.status == "running":
-                running = self.session.execute(
-                    select(WorkItem)
-                    .where(WorkItem.execution_plan_id == plan_row.id, WorkItem.status == "running")
-                    .limit(1)
-                ).scalar_one_or_none()
+                running = repo.running_work_item(plan_row.id)
                 data["ai_activity"] = (
                     "資料作成中" if running and "作成" in (running.title or "") else "調査中"
                 )
@@ -197,18 +153,6 @@ class TaskService:
             data["ai_activity"] = "確認待ち"
         elif task.status == TaskStatus.BLOCKED:
             data["ai_activity"] = "追加情報待ち"
-        data["pending_artifacts"] = int(
-            self.session.execute(
-                select(func.count(TaskArtifact.id)).where(
-                    TaskArtifact.task_id == task.id, TaskArtifact.status == "review_pending"
-                )
-            ).scalar_one()
-        )
-        data["open_chats"] = int(
-            self.session.execute(
-                select(func.count(TaskChat.id)).where(TaskChat.task_id == task.id)
-            ).scalar_one()
-        )
         return data
 
     # --- mutations ----------------------------------------------------

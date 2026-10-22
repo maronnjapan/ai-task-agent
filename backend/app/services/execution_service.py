@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.events import EventBroker
@@ -564,7 +564,9 @@ class ExecutionService:
         self.get_plan(plan_id)
         return list(
             self.session.execute(
-                select(Review).where(Review.execution_plan_id == plan_id).order_by(Review.created_at.desc())
+                select(Review)
+                .where(Review.execution_plan_id == plan_id)
+                .order_by(Review.created_at.desc(), literal_column("rowid").desc())
             ).scalars()
         )
 

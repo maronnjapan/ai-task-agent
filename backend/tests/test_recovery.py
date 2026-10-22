@@ -208,7 +208,8 @@ def test_single_instance_lock(tmp_path: Path):
     lock_path = tmp_path / "aiwm.lock"
     first = InstanceLock(lock_path)
     first.acquire()
-    assert first.held and lock_path.read_text().strip().isdigit()
+    assert first.held and lock_path.exists()
+    assert lock_path.read_text().strip().isdigit()
     second = InstanceLock(lock_path)
     with pytest.raises(AlreadyRunningError):
         second.acquire()

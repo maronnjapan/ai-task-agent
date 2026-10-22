@@ -112,6 +112,7 @@ class LinuxPlatformAdapter(PlatformAdapter):
             f"# <<< {spec.label} autostart <<<\n"
         )
         path = self.profile_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(self._profile_text() + block, encoding="utf-8")
         return str(path)
 

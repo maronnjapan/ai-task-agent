@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.orm import Session
 
 from app.infrastructure.events import EventBroker
@@ -66,13 +66,18 @@ class ChatService:
     ) -> tuple[list[ChatMessage], bool]:
         """Return messages in chronological order with simple keyset paging."""
         self.get_chat(chat_id)
+        rowid = literal_column("rowid")
         stmt = select(ChatMessage).where(ChatMessage.chat_id == chat_id)
         if before:
-            anchor = self.session.get(ChatMessage, before)
-            if anchor is not None:
-                stmt = stmt.where(ChatMessage.created_at < anchor.created_at)
+            anchor_rowid = self.session.execute(
+                select(rowid).select_from(ChatMessage).where(ChatMessage.id == before)
+            ).scalar_one_or_none()
+            if anchor_rowid is not None:
+                stmt = stmt.where(rowid < anchor_rowid)
         rows = list(
-            self.session.execute(stmt.order_by(ChatMessage.created_at.desc()).limit(limit + 1)).scalars()
+            self.session.execute(
+                stmt.order_by(ChatMessage.created_at.desc(), rowid.desc()).limit(limit + 1)
+            ).scalars()
         )
         has_more = len(rows) > limit
         rows = rows[:limit]

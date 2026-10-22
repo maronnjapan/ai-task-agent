@@ -16,9 +16,23 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+_last_timestamp: datetime | None = None
+_timestamp_lock = __import__("threading").Lock()
+
+
 def now_iso() -> str:
-    """Current UTC time as ISO-8601 string (stored in SQLite TEXT columns)."""
-    return utcnow().isoformat()
+    """Current UTC time as ISO-8601 string (stored in SQLite TEXT columns).
+
+    Strictly increasing within the process: rows created in the same clock tick (Windows has
+    ~15 ms resolution) still sort in creation order when ordered by their timestamp columns.
+    """
+    global _last_timestamp
+    with _timestamp_lock:
+        current = utcnow()
+        if _last_timestamp is not None and current <= _last_timestamp:
+            current = _last_timestamp + timedelta(microseconds=1)
+        _last_timestamp = current
+        return current.isoformat()
 
 
 def to_iso(value: datetime | None) -> str | None:

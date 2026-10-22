@@ -114,8 +114,8 @@ async def test_stdio_disconnect_and_errors():
     assert not client.connected
     with pytest.raises(MCPConnectionError):
         await client.list_tools()
-    assert resolve_command("python3").endswith("python3") or resolve_command("python3") == "python3"
-    assert resolve_command("~/bin/tool").startswith("/")
+    assert Path(resolve_command("python3")).stem.lower() == "python3"
+    assert not resolve_command("~/bin/tool").startswith("~")
 
 
 @pytest.mark.asyncio
