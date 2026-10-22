@@ -134,13 +134,6 @@ def request_revision(
     artifact = service.request_revision(artifact_id, data.instructions, actor="user")
     session.commit()
     if ctx.orchestrator is not None:
-        for task_id in service.linked_task_ids(artifact):
-            from app.services.task_service import TaskService
-
-            TaskService(session, ctx.broker).request_revision(
-                task_id, f"成果物「{artifact.title}」: {data.instructions}", kind="revision", actor="user"
-            )
-        session.commit()
         ctx.orchestrator.trigger("task_updated", {"artifact_id": artifact.id, "revision": True})
     return artifact_out(service, artifact)
 

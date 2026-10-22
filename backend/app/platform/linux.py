@@ -55,7 +55,8 @@ class LinuxPlatformAdapter(PlatformAdapter):
             f"ExecStart={exec_start}\n"
             f"{env_lines}"
             "Restart=on-failure\n"
-            "RestartSec=10\n\n"
+            "RestartSec=10\n"
+            "RestartPreventExitStatus=2\n\n"
             "[Install]\n"
             "WantedBy=default.target\n"
         )
@@ -67,7 +68,9 @@ class LinuxPlatformAdapter(PlatformAdapter):
         path = self.service_path(spec.label)
         path.write_text(self.render_service(spec), encoding="utf-8")
         self._run(["systemctl", "--user", "daemon-reload"])
-        self._run(["systemctl", "--user", "enable", "--now", f"{spec.label}.service"])
+        # ``enable`` only: the app is usually running while this is configured; a second instance
+        # would exit with status 2 (lock held) and loop under Restart=on-failure.
+        self._run(["systemctl", "--user", "enable", f"{spec.label}.service"])
         return str(path)
 
     def remove_autostart(self, label: str) -> bool:

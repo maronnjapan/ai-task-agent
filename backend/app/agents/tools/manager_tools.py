@@ -33,10 +33,15 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
             rows = []
             for task in tasks:
                 extra = service.decorate(task)
-                open_contexts = [c.context for c in service.open_contexts(task.id)]
+                open_contexts = [c.context for c in service.open_contexts(task.id) if c.source != "user_hold"]
                 rows.append(
                     task_to_dict(
-                        task, {"active_plan_id": extra["active_plan_id"], "open_user_contexts": open_contexts}
+                        task,
+                        {
+                            "active_plan_id": extra["active_plan_id"],
+                            "open_user_contexts": open_contexts,
+                            "on_hold": service.is_on_hold(task.id),
+                        },
                     )
                 )
             return as_json(rows)
@@ -215,6 +220,8 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
                     return f"error: task {task_id} is {task.status}; it must not be planned"
                 if task.assignee == Assignee.USER:
                     return f"error: task {task_id} is assigned to the user; AI must not work on it"
+                if task_service.is_on_hold(task_id):
+                    return f"error: task {task_id} is on hold by the user (保留); do not plan it"
                 active = [
                     p
                     for p in service.plans_for_task(task_id)
@@ -331,13 +338,16 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
             ctx.record("notifications", row.id)
             return as_json({"id": row.id, "title": row.title})
 
-    def record_decision(task_id: str, content: str) -> str:
-        """Record a formal decision the user explicitly stated in their instruction. Never record assumptions."""
+    def record_decision(task_id: str, content: str, supersedes_id: str | None = None) -> str:
+        """Record a formal decision the user explicitly stated in their instruction. Never record assumptions.
+        Pass supersedes_id when the user changed an earlier decision (the old one is kept as history)."""
         if ctx.mode != "instruction":
             return "error: decisions can only be recorded from an explicit user instruction"
         with ctx.session() as session:
             try:
-                decision = DecisionService(session, app.broker).record(task_id, content, actor="user")
+                decision = DecisionService(session, app.broker).record(
+                    task_id, content, supersedes_id=supersedes_id, actor="user"
+                )
             except ServiceError as exc:
                 return f"error: {exc.message}"
             ctx.record("decisions", decision.id)

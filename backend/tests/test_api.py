@@ -6,6 +6,40 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.context import AppContext
+from tests.conftest import make_test_client
+
+
+def test_session_token_protection(ctx: AppContext):
+    from app.api.session import COOKIE_NAME, HEADER_NAME
+    from app.main import session_token
+
+    token = session_token(ctx)
+    assert token and (ctx.paths.config / "session.token").read_text().strip() == token
+    with make_test_client(ctx, with_session=False) as client:
+        denied = client.get("/api/tasks")
+        assert denied.status_code == 401 and denied.json()["code"] == "session_required"
+        assert client.get("/api/tasks", headers={HEADER_NAME: token}).status_code == 200
+        assert client.get("/api/tasks", headers={HEADER_NAME: "wrong"}).status_code == 401
+        # the OAuth callback is reached by a cross-site redirect: protected by its state parameter instead
+        assert (
+            client.get("/api/integrations/oauth/callback", params={"state": "x", "code": "y"}).status_code
+            == 400
+        )
+        # opening the tokenised URL issues the HttpOnly cookie, after which plain API calls work
+        landing = client.get("/", params={"token": token})
+        assert landing.status_code == 200 and COOKIE_NAME in landing.cookies
+        assert "HttpOnly" in landing.headers["set-cookie"] and "SameSite=strict" in landing.headers[
+            "set-cookie"
+        ].lower().replace("samesite=strict", "SameSite=strict")
+        assert client.get("/api/tasks").status_code == 200
+    with make_test_client(ctx, with_session=False) as client:
+        assert "set-cookie" not in client.get("/", params={"token": "bogus"}).headers
+        assert client.get("/api/tasks").status_code == 401
+    ctx.settings.api_session_token_required = False
+    ctx.extras.pop("session_token", None)
+    with make_test_client(ctx, with_session=False) as client:
+        assert client.get("/api/tasks").status_code == 200
+    ctx.settings.api_session_token_required = True
 
 
 def test_csrf_and_host_protection(ctx: AppContext):
@@ -13,6 +47,9 @@ def test_csrf_and_host_protection(ctx: AppContext):
 
     app = create_app(ctx, serve_frontend=False)
     with TestClient(app) as client:
+        client.headers.update({"X-AIWM-Token": ctx.extras["session_token"]})
+        assert client.get("/api/tasks", headers={"Host": "testserver"}).status_code == 400  # unknown host
+        client.headers.update({"Host": "127.0.0.1:8765"})
         assert client.post("/api/tasks", json={"title": "x"}).status_code == 403
         assert (
             client.post(
@@ -40,6 +77,7 @@ def test_wildcard_bind_relaxes_host_but_keeps_origin_check(ctx: AppContext):
     ctx.settings.app_host = "0.0.0.0"
     app = create_app(ctx, serve_frontend=False)
     with TestClient(app) as client:
+        client.headers.update({"X-AIWM-Token": ctx.extras["session_token"]})
         assert client.get("/api/tasks", headers={"Host": "172.20.0.5:8765"}).status_code == 200
         ok = client.post(
             "/api/tasks",

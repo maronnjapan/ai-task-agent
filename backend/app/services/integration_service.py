@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.infrastructure.logging import register_secret
 from app.infrastructure.secrets.base import SecretProvider
-from app.integrations.mcp.config import ConnectionConfig
+from app.integrations.mcp.config import SECRET_PLACEHOLDER, ConnectionConfig
 from app.integrations.permissions import validate_permission
 from app.models import MCPConnection, MCPToolPermission
 from app.schemas.integrations import IntegrationCreate, IntegrationUpdate
@@ -16,6 +19,13 @@ from app.utils import dumps, now_iso
 
 TRANSPORTS = {"stdio", "streamable_http"}
 AUTH_TYPES = {"none", "api_token", "bearer", "oauth2", "custom"}
+SECRET_KEY_PATTERN = re.compile(
+    r"(token|secret|key|password|passwd|credential|authorization|cookie|auth)", re.IGNORECASE
+)
+
+
+def is_secret_key(key: str) -> bool:
+    return bool(SECRET_KEY_PATTERN.search(key or ""))
 
 
 class IntegrationService:
@@ -66,9 +76,13 @@ class IntegrationService:
         )
         self.session.add(row)
         self.session.flush()
-        row.secret_ref = ConnectionConfig.from_model(row).secret_name()
+        config = ConnectionConfig.from_model(row)
+        row.secret_ref = config.secret_name()
         if data.secret:
             self.secret_store.set_secret(row.secret_ref, data.secret)
+            register_secret(data.secret)
+        row.env = dumps(self._protect(config, data.env, "env"))
+        row.headers = dumps(self._protect(config, data.headers, "header"))
         self._set_permissions(row, [p.model_dump() for p in data.tool_permissions])
         self.session.flush()
         self.audit.record(
@@ -81,6 +95,11 @@ class IntegrationService:
         changes = data.model_dump(exclude_unset=True)
         secret = changes.pop("secret", None)
         permissions = changes.pop("tool_permissions", None)
+        config = ConnectionConfig.from_model(row)
+        if changes.get("env") is not None:
+            changes["env"] = self._protect(config, changes["env"], "env")
+        if changes.get("headers") is not None:
+            changes["headers"] = self._protect(config, changes["headers"], "header")
         for key in ("args", "env", "headers", "auth_config", "allowed_tools"):
             if key in changes and changes[key] is not None:
                 changes[key] = dumps(changes[key])
@@ -97,9 +116,8 @@ class IntegrationService:
             setattr(row, key, value)
         self._validate(row.transport, row.auth_type, row.command, row.url)
         if secret:
-            self.secret_store.set_secret(
-                row.secret_ref or ConnectionConfig.from_model(row).secret_name(), secret
-            )
+            self.secret_store.set_secret(row.secret_ref or config.secret_name(), secret)
+            register_secret(secret)
         if permissions is not None:
             self._set_permissions(row, permissions)
         row.updated_at = now_iso()
@@ -107,9 +125,38 @@ class IntegrationService:
         self.audit.record("mcp.updated", "mcp_connection", row.id, actor, {"fields": list(changes)})
         return row
 
+    def _protect(self, config: ConnectionConfig, values: dict[str, str], kind: str) -> dict[str, str]:
+        """Store secret-looking values (tokens, keys, Authorization...) in the Secret Provider.
+
+        SQLite only keeps the placeholder, and the API never returns the real value (SPEC 17.6 / 27.2).
+        """
+        protected: dict[str, str] = {}
+        for key, value in (values or {}).items():
+            value = "" if value is None else str(value)
+            name = config.env_secret_name(key) if kind == "env" else config.header_secret_name(key)
+            if not is_secret_key(key):
+                protected[key] = value
+                continue
+            if value == SECRET_PLACEHOLDER:
+                protected[key] = SECRET_PLACEHOLDER  # unchanged, keep the stored secret
+                continue
+            if value == "":
+                self.secret_store.delete_secret(name)
+                continue
+            self.secret_store.set_secret(name, value)
+            register_secret(value)
+            protected[key] = SECRET_PLACEHOLDER
+        return protected
+
     def delete(self, connection_id: str, actor: str = "user") -> None:
         row = self.get(connection_id)
         config = ConnectionConfig.from_model(row)
+        for key, value in config.env.items():
+            if value == SECRET_PLACEHOLDER:
+                self.secret_store.delete_secret(config.env_secret_name(key))
+        for key, value in config.headers.items():
+            if value == SECRET_PLACEHOLDER:
+                self.secret_store.delete_secret(config.header_secret_name(key))
         for name in (config.secret_name(), config.oauth_secret_name()):
             try:
                 self.secret_store.delete_secret(name)

@@ -231,7 +231,7 @@
 
   <fieldset class="perm">
     <legend>ツール権限</legend>
-    <p class="help">外部書き込み (external_write) は実行前にユーザー承認が必要です。未登録のツールは接続テスト後に自動で追加されます。</p>
+    <p class="help">外部書き込み (external_write) は実行前にユーザー承認が必要です。保存後に「接続テスト」または「ツール一覧」を実行すると、検出されたツールごとに権限と有効/無効を設定できます。トークンなどの秘密情報を含む環境変数・ヘッダーは Secret Provider に保存され、画面には &lt;secret&gt; と表示されます。</p>
     {#if form.tool_permissions.length === 0}
       <div class="empty small">ツール権限はまだありません</div>
     {/if}

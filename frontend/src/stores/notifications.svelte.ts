@@ -57,14 +57,17 @@ export function bindNotificationEvents(): void {
   bound = true;
   const refresh = debounced(() => void loadNotifications(), 400);
   onEvent('notification.created', (event) => {
-    const data = event.data as { notification_id?: string; title?: string; body?: string; level?: string; task_id?: string | null };
+    const data = event.data as { notification_id?: string; title?: string; body?: string; level?: string; task_id?: string | null; quiet?: boolean; channel?: string };
     const level = data.level ?? 'normal';
-    pushToast(data.title ?? '新しい通知', {
-      kind: level === 'urgent' || level === 'error' ? 'error' : level === 'high' || level === 'warning' ? 'warning' : 'info',
-      body: data.body,
-      href: data.task_id ? links.task(data.task_id) : undefined,
-      timeout: 7000
-    });
+    // 通知停止時間帯 (quiet hours): keep the history, skip the toast.
+    if (!data.quiet) {
+      pushToast(data.title ?? '新しい通知', {
+        kind: level === 'high' ? 'warning' : 'info',
+        body: data.channel === 'manager_message' && data.body ? data.body.slice(0, 400) : data.body,
+        href: data.task_id ? links.task(data.task_id) : undefined,
+        timeout: data.channel === 'manager_message' ? 10000 : 7000
+      });
+    }
     refresh();
   });
   onEvent(['notification.read', 'system.restored'], refresh);

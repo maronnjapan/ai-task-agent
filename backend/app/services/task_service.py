@@ -23,7 +23,7 @@ from app.models.enums import Actor, TaskStatus
 from app.schemas.tasks import TaskCreate, TaskUpdate
 from app.services.audit_service import AuditService
 from app.services.errors import NotFoundError, ValidationError
-from app.utils import dumps, loads, now_iso
+from app.utils import dumps, loads, now_iso, parse_iso
 
 SNAPSHOT_FIELDS = ("title", "description", "due_at", "category_id", "status", "assignee")
 
@@ -36,6 +36,17 @@ ACTIVITY_LABELS = {
 
 def snapshot(task: Task) -> dict[str, Any]:
     return {name: getattr(task, name) for name in SNAPSHOT_FIELDS}
+
+
+def normalize_datetime(value: str | None) -> str | None:
+    """Store date-times as UTC ISO-8601 so that string comparisons are chronological (SPEC 23.5)."""
+    if value is None or not str(value).strip():
+        return None
+    try:
+        parsed = parse_iso(str(value))
+    except ValueError as exc:
+        raise ValidationError(f"Invalid date-time: {value}") from exc
+    return parsed.isoformat() if parsed else None
 
 
 class CategoryService:
@@ -79,9 +90,18 @@ class CategoryService:
         return category
 
     def delete(self, category_id: str) -> None:
+        from app.models import Memory
+
         category = self.get(category_id)
         for task in self.session.execute(select(Task).where(Task.category_id == category_id)).scalars():
             task.category_id = None
+        # Task memories keep their task; category memories lose their container and are deleted.
+        for memory in self.session.execute(select(Memory).where(Memory.category_id == category_id)).scalars():
+            if memory.scope == "task":
+                memory.category_id = None
+            else:
+                self.session.delete(memory)
+        self.session.flush()
         self.session.delete(category)
         self.session.flush()
 
@@ -198,7 +218,7 @@ class TaskService:
         task = Task(
             title=data.title.strip(),
             description=data.description,
-            due_at=data.due_at,
+            due_at=normalize_datetime(data.due_at),
             category_id=data.category_id,
             status=str(data.status),
             assignee=str(data.assignee),
@@ -227,6 +247,8 @@ class TaskService:
                 value = str(value)
             if field == "title" and value is not None:
                 value = value.strip()
+            if field == "due_at":
+                value = normalize_datetime(value)
             if getattr(task, field) != value:
                 setattr(task, field, value)
                 changed_fields.append(field)
@@ -295,6 +317,9 @@ class TaskService:
     def reopen(self, task_id: str, actor: str = Actor.USER, reason: str | None = None) -> Task:
         task = self.get(task_id)
         previous = snapshot(task)
+        for ctx in self.open_contexts(task.id):
+            if ctx.source == "user_hold":
+                ctx.status = "resolved"
         task.status = TaskStatus.TODO
         task.updated_at = now_iso()
         self.session.flush()
@@ -315,6 +340,10 @@ class TaskService:
             new_status = TaskStatus.BLOCKED
         else:
             new_status = TaskStatus.TODO
+        if kind != "hold":
+            for previous in self.open_contexts(task.id):
+                if previous.source == "user_hold":
+                    previous.status = "resolved"
         context = TaskContext(
             task_id=task.id,
             context=instructions,
@@ -380,6 +409,10 @@ class TaskService:
         self.session.flush()
         self.audit.record("task.context_added", "task", task_id, actor, {"source": source})
         return row
+
+    def is_on_hold(self, task_id: str) -> bool:
+        """A task the user put on hold (SPEC 12.1 保留) must not be resumed by the Manager."""
+        return any(c.source == "user_hold" for c in self.open_contexts(task_id))
 
     def open_contexts(self, task_id: str) -> list[TaskContext]:
         return list(

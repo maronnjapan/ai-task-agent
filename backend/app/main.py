@@ -13,6 +13,7 @@ from starlette.staticfiles import StaticFiles
 from app import __version__
 from app.api.router import api_router
 from app.api.security import LocalApiProtectionMiddleware
+from app.api.session import COOKIE_MAX_AGE, COOKIE_NAME, QUERY_PARAM, SessionGuard, load_or_create_token
 from app.config import PROJECT_ROOT, Settings, get_settings
 from app.context import AppContext
 from app.infrastructure.database import Database
@@ -90,8 +91,54 @@ def build_context(
     return ctx
 
 
-def create_app(ctx: AppContext | None = None, serve_frontend: bool = True) -> FastAPI:
+def session_token(ctx: AppContext) -> str | None:
+    if not ctx.settings.api_session_token_required:
+        return None
+    token = ctx.extras.get("session_token")
+    if not token:
+        token = load_or_create_token(ctx.paths.config / "session.token")
+        ctx.extras["session_token"] = token
+    return token
+
+
+def session_url(ctx: AppContext) -> str:
+    host = "127.0.0.1" if ctx.settings.app_host in ("0.0.0.0", "::", "") else ctx.settings.app_host
+    base = f"http://{host}:{ctx.settings.app_port}/"
+    token = session_token(ctx)
+    return f"{base}?{QUERY_PARAM}={token}" if token else base
+
+
+def write_settings_snapshot(ctx: AppContext) -> Path:
+    """Mirror the effective settings to ``config/settings.json`` (SPEC 5.3) for inspection and backups."""
+    import json
+
+    from app.services.settings_service import SettingsService
+
+    with ctx.db.session() as session:
+        service = SettingsService(session, ctx.settings)
+        snapshot = {
+            "llm": service.get_llm().model_dump(),
+            "manager": service.get_manager().model_dump(),
+            "notifications": service.get_notifications().model_dump(),
+            "local_sources": service.get_local_sources().model_dump(),
+            "backup": service.get_backup().model_dump(),
+            "app": {
+                "host": ctx.settings.app_host,
+                "port": ctx.settings.app_port,
+                "data_dir": str(ctx.paths.root),
+            },
+        }
+    ctx.paths.config.mkdir(parents=True, exist_ok=True)
+    ctx.paths.settings_file.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+    return ctx.paths.settings_file
+
+
+def create_app(
+    ctx: AppContext | None = None, serve_frontend: bool = True, extra_hosts: set[str] | None = None
+) -> FastAPI:
     ctx = ctx or build_context()
+    guard = SessionGuard(session_token(ctx))
+    write_settings_snapshot(ctx)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -124,8 +171,25 @@ def create_app(ctx: AppContext | None = None, serve_frontend: bool = True) -> Fa
         LocalApiProtectionMiddleware,
         app_host=ctx.settings.app_host,
         app_port=ctx.settings.app_port,
-        extra_hosts={"testserver"},
+        extra_hosts=extra_hosts,
+        session_guard=guard,
     )
+
+    def _attach_session(request: Request, response):
+        """Issue the session cookie when the tokenised URL is opened (or renew an existing one)."""
+        if not guard.enabled:
+            return response
+        presented = request.query_params.get(QUERY_PARAM)
+        if guard.matches(presented) or guard.matches(request.cookies.get(COOKIE_NAME)):
+            response.set_cookie(
+                COOKIE_NAME,
+                guard.token or "",
+                max_age=COOKIE_MAX_AGE,
+                httponly=True,
+                samesite="strict",
+                path="/",
+            )
+        return response
 
     @app.exception_handler(ServiceError)
     async def service_error_handler(request: Request, exc: ServiceError):
@@ -139,45 +203,57 @@ def create_app(ctx: AppContext | None = None, serve_frontend: bool = True) -> Fa
             app.mount("/assets", StaticFiles(directory=assets), name="assets")
 
         @app.get("/{full_path:path}", include_in_schema=False)
-        async def spa(full_path: str):
+        async def spa(request: Request, full_path: str):
             if full_path.startswith("api/"):
                 return JSONResponse({"detail": "Not Found"}, status_code=404)
             candidate = (FRONTEND_DIST / full_path).resolve()
             if full_path and candidate.is_file() and FRONTEND_DIST.resolve() in candidate.parents:
                 return FileResponse(candidate)
-            return FileResponse(FRONTEND_DIST / "index.html")
+            return _attach_session(request, FileResponse(FRONTEND_DIST / "index.html"))
 
     else:
 
         @app.get("/", include_in_schema=False)
-        async def root():
-            return JSONResponse(
-                {
-                    "name": "Autonomous AI Work Manager",
-                    "version": __version__,
-                    "frontend": "not built - run `npm run build` in frontend/",
-                    "api_docs": "/api/docs",
-                }
+        async def root(request: Request):
+            return _attach_session(
+                request,
+                JSONResponse(
+                    {
+                        "name": "Autonomous AI Work Manager",
+                        "version": __version__,
+                        "frontend": "not built - run `npm run build` in frontend/",
+                        "api_docs": "/api/docs",
+                    }
+                ),
             )
 
     return app
 
 
-def serve(ctx: AppContext | None = None, open_browser: bool = False) -> None:
-    import uvicorn
-
+def acquire_instance_lock(settings: Settings | None = None):
+    """Refuse to start a second backend before any migration or interactive prompt runs (SPEC 6.3)."""
     from app.infrastructure.single_instance import AlreadyRunningError, InstanceLock
 
-    ctx = ctx or build_context(interactive=False)
-    lock = InstanceLock(ctx.paths.lock_file)
+    settings = settings or get_settings()
+    paths = build_paths(settings.resolved_data_dir()).ensure()
+    lock = InstanceLock(paths.lock_file)
     try:
         lock.acquire()
     except AlreadyRunningError:
-        log.error("Another AI Work Manager instance is already running for %s", ctx.paths.root)
+        log.error("Another AI Work Manager instance is already running for %s", paths.root)
         raise SystemExit(2) from None
+    return lock
+
+
+def serve(ctx: AppContext | None = None, open_browser: bool = False, lock=None) -> None:
+    import uvicorn
+
+    ctx = ctx or build_context(interactive=False)
+    lock = lock or acquire_instance_lock(ctx.settings)
     ctx.paths.pid_file.write_text(str(__import__("os").getpid()))
     app = create_app(ctx)
-    url = f"http://{ctx.settings.app_host}:{ctx.settings.app_port}"
+    url = session_url(ctx)
+    log.info("UI: %s", url)
     if open_browser:
         import threading
 

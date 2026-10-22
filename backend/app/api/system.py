@@ -69,8 +69,9 @@ def backup(
     directory = (data.directory if data and data.directory else None) or settings.directory
     service = BackupService(ctx.paths, __version__)
     try:
-        info = service.create(Path(directory) if directory else None, label=data.label if data else None)
-        service.prune(settings.keep_last, Path(directory) if directory else None)
+        target = Path(directory) if directory else None
+        info = service.create(target, label=data.label if data else None)
+        service.prune(settings.keep_last, target)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Backup failed: {exc}") from exc
     AuditService(session).record("backup.created", "system", None, "user", {"path": str(info.path)})
@@ -103,11 +104,19 @@ async def restore(data: RestoreRequest, ctx: AppContext = Depends(get_ctx)):
     was_paused = orchestrator.paused if orchestrator else True
     if orchestrator and not was_paused:
         orchestrator.pause()
+    with ctx.db.session() as session:
+        backup_settings = SettingsService(session, ctx.settings).get_backup()
+    safety_dir = Path(backup_settings.directory) if backup_settings.directory else None
     service = BackupService(ctx.paths, __version__)
     try:
+        if orchestrator:
+            await orchestrator.wait_idle()  # never swap the database under a running cycle
         ctx.db.engine.dispose()
-        safety = service.restore(archive)
+        safety = await asyncio.to_thread(service.restore, archive, safety_dir)
         ctx.db.reinitialize()
+        from app.orchestrator.recovery import recover
+
+        recovery = recover(ctx)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Restore failed: {exc}") from exc
     finally:
@@ -119,7 +128,7 @@ async def restore(data: RestoreRequest, ctx: AppContext = Depends(get_ctx)):
             "system",
             None,
             "user",
-            {"from": str(archive), "safety_backup": str(safety.path)},
+            {"from": str(archive), "safety_backup": str(safety.path), "recovery": recovery},
         )
     ctx.broker.publish("system.restored", {"from": str(archive)})
     return RestoreOut(

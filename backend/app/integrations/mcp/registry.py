@@ -39,8 +39,10 @@ class ApprovalPendingError(RuntimeError):
 
 class MCPRegistry:
     def __init__(
-        self, app: AppContext, approval_wait_seconds: float = 0.0, approval_poll_seconds: float = 2.0
+        self, app: AppContext, approval_wait_seconds: float | None = None, approval_poll_seconds: float = 2.0
     ):
+        if approval_wait_seconds is None:
+            approval_wait_seconds = float(getattr(app.settings, "mcp_approval_wait_seconds", 300))
         self.app = app
         self._clients: dict[str, MCPClient] = {}
         self._auth: dict[str, Any] = {}
@@ -55,21 +57,34 @@ class MCPRegistry:
             stmt = select(MCPConnection).order_by(MCPConnection.name)
             if enabled_only:
                 stmt = stmt.where(MCPConnection.enabled.is_(True))
-            return [ConnectionConfig.from_model(row) for row in session.execute(stmt).scalars()]
+            return [
+                ConnectionConfig.from_model(row).resolve_secrets(self.app.secret_store)
+                for row in session.execute(stmt).scalars()
+            ]
 
     def config(self, connection_id: str) -> ConnectionConfig:
         with self.app.db.session() as session:
             row = session.get(MCPConnection, connection_id)
             if row is None:
                 raise KeyError(connection_id)
-            return ConnectionConfig.from_model(row)
+            return ConnectionConfig.from_model(row).resolve_secrets(self.app.secret_store)
 
     def auth_for(self, config: ConnectionConfig):
         auth = self._auth.get(config.id)
         if auth is None or getattr(auth, "auth_type", None) != config.auth_type:
-            auth = build_auth(config, self.app.secret_store, http_post=self.http_post)
+            auth = build_auth(
+                config,
+                self.app.secret_store,
+                http_post=self.http_post,
+                default_redirect_uri=self.redirect_uri(),
+            )
             self._auth[config.id] = auth
         return auth
+
+    def redirect_uri(self) -> str:
+        settings = self.app.settings
+        host = "127.0.0.1" if settings.app_host in ("0.0.0.0", "::", "") else settings.app_host
+        return f"http://{host}:{settings.app_port}/api/integrations/oauth/callback"
 
     def invalidate(self, connection_id: str) -> None:
         self._auth.pop(connection_id, None)
@@ -208,22 +223,45 @@ class MCPRegistry:
         agent_ctx: AgentContext | None,
         reason: str | None,
     ) -> None:
+        task_id = agent_ctx.task_ids[0] if agent_ctx and agent_ctx.task_ids else None
         with self.app.db.session() as session:
             approvals = ApprovalService(session, self.app.broker)
+            existing = approvals.find_approved(config.id, tool_name, arguments)
+            if existing is not None:
+                approvals.mark_executed(existing.id)  # the user already approved this exact call
+                return
             request = approvals.request(
                 tool_name,
                 arguments,
                 connection_id=config.id,
-                task_id=(agent_ctx.task_ids[0] if agent_ctx and agent_ctx.task_ids else None),
+                task_id=task_id,
                 work_item_id=agent_ctx.work_item_id if agent_ctx else None,
                 reason=reason or f"{config.name} への外部書き込み",
             )
             approval_id = request.id
+            from app.services.notification_service import NotificationService
+            from app.services.settings_service import SettingsService
+
+            NotificationService(
+                session,
+                SettingsService(session, self.app.settings).get_notifications(),
+                self.app.platform,
+                self.app.broker,
+            ).create(
+                "外部操作の承認が必要です",
+                f"{config.name} の {tool_name} を実行してよいか確認してください。",
+                level="high",
+                task_id=task_id,
+                dedupe_key=f"approval:{approval_id}",
+                source="orchestrator",
+            )
         deadline = time.monotonic() + self.approval_wait_seconds
         while True:
             with self.app.db.session() as session:
                 row = ApprovalService(session).get(approval_id)
                 status = row.status
+                if status == "approved":
+                    ApprovalService(session).mark_executed(approval_id)
             if status == "approved":
                 return
             if status in ("rejected", "expired"):

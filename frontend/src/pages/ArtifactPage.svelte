@@ -128,7 +128,8 @@
     busy = true;
     try {
       const result = await api.artifacts.open(id);
-      toast.success(result.message || 'ファイルを開きました');
+      if (result.ok) toast.success('ファイルを開きました', result.data?.path ? String(result.data.path) : undefined);
+      else toast.error('ファイルを開けませんでした', result.message || (result.data?.path ? String(result.data.path) : undefined));
     } catch {
       // banner
     } finally {
@@ -211,8 +212,9 @@
   onMount(() => {
     void load();
     window.addEventListener('beforeunload', beforeUnload);
+    const reload = debounced(() => void load(), 300);
     const off = onEvent('artifact.updated', (event) => {
-      if ((event.data as { artifact_id?: string }).artifact_id === id && mode !== 'edit') debounced(() => void load(), 300)();
+      if ((event.data as { artifact_id?: string }).artifact_id === id && mode !== 'edit') reload();
     });
     return () => {
       window.removeEventListener('beforeunload', beforeUnload);

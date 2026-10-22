@@ -15,6 +15,15 @@ if config.config_file_name is not None and not config.attributes.get("connection
 
 target_metadata = Base.metadata
 
+FTS_PREFIXES = ("memories_fts", "chat_messages_fts")
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    """Ignore the FTS5 virtual tables (created by raw DDL) during autogenerate."""
+    if type_ == "table" and name is not None and name.startswith(FTS_PREFIXES):
+        return False
+    return True
+
 
 def _url() -> str:
     override = os.environ.get("AIWM_DATABASE_URL")
@@ -30,6 +39,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         render_as_batch=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -38,7 +48,12 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     connection = config.attributes.get("connection")
     if connection is not None:
-        context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+            include_object=include_object,
+        )
         with context.begin_transaction():
             context.run_migrations()
         return
@@ -46,9 +61,14 @@ def run_migrations_online() -> None:
     section = config.get_section(config.config_ini_section, {})
     section["sqlalchemy.url"] = _url()
     connectable = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
-    with connectable.connect() as conn:
+    with connectable.begin() as conn:  # commits on exit (SQLAlchemy 2.x has no autocommit)
         conn.exec_driver_sql("PRAGMA foreign_keys = ON")
-        context.configure(connection=conn, target_metadata=target_metadata, render_as_batch=True)
+        context.configure(
+            connection=conn,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+            include_object=include_object,
+        )
         with context.begin_transaction():
             context.run_migrations()
 

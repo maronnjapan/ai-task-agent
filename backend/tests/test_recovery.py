@@ -173,7 +173,7 @@ def test_alembic_migrations_fresh_database(tmp_path: Path):
             "alembic_version",
             "mcp_connections",
         } <= tables
-        assert conn.execute(text("select version_num from alembic_version")).scalar_one() == "0001"
+        assert conn.execute(text("select version_num from alembic_version")).scalar_one() == "0002"
         assert conn.execute(text("pragma foreign_keys")).scalar_one() == 1
         assert conn.execute(text("pragma journal_mode")).scalar_one() == "wal"
     # idempotent on restart

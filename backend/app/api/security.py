@@ -8,6 +8,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from app.api.session import COOKIE_NAME, HEADER_NAME, SessionGuard
+
 CSRF_HEADER = "x-requested-with"
 CSRF_VALUE = "AIWM"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -25,9 +27,17 @@ def allowed_hosts(app_host: str, app_port: int) -> set[str]:
 
 
 class LocalApiProtectionMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, app_host: str, app_port: int, extra_hosts: set[str] | None = None):
+    def __init__(
+        self,
+        app,
+        app_host: str,
+        app_port: int,
+        extra_hosts: set[str] | None = None,
+        session_guard: SessionGuard | None = None,
+    ):
         super().__init__(app)
         self.hosts = allowed_hosts(app_host, app_port) | (extra_hosts or set())
+        self.session_guard = session_guard or SessionGuard(None)
         # Binding to all interfaces (e.g. WSL reached from the Windows host) is an explicit
         # user choice; the Host check is relaxed but Origin and the CSRF header still apply.
         self.any_host = app_host in ("0.0.0.0", "::", "")
@@ -47,6 +57,20 @@ class LocalApiProtectionMiddleware(BaseHTTPMiddleware):
             host = request.headers.get("host")
             if not self._host_ok(host):
                 return JSONResponse({"detail": "Invalid Host header"}, status_code=400)
+            if (
+                self.session_guard.enabled
+                and not self.session_guard.is_exempt(path)
+                and not self.session_guard.is_authorised(
+                    request.cookies.get(COOKIE_NAME), request.headers.get(HEADER_NAME)
+                )
+            ):
+                return JSONResponse(
+                    {
+                        "detail": "セッショントークンが必要です。`aiwm start` が表示する URL（token 付き）からアプリを開いてください。",
+                        "code": "session_required",
+                    },
+                    status_code=401,
+                )
             if request.method not in SAFE_METHODS:
                 origin = request.headers.get("origin")
                 if origin:

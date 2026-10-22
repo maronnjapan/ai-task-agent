@@ -66,6 +66,31 @@ class ApprovalService:
             )
         return row
 
+    def find_approved(
+        self, connection_id: str | None, tool_name: str, arguments: dict
+    ) -> ApprovalRequest | None:
+        """An approval the user already granted for exactly this call and that has not been consumed yet."""
+        stmt = (
+            select(ApprovalRequest)
+            .where(
+                ApprovalRequest.status == "approved",
+                ApprovalRequest.executed_at.is_(None),
+                ApprovalRequest.tool_name == tool_name,
+                ApprovalRequest.arguments == dumps(arguments),
+            )
+            .order_by(ApprovalRequest.resolved_at.desc())
+        )
+        if connection_id:
+            stmt = stmt.where(ApprovalRequest.connection_id == connection_id)
+        return self.session.execute(stmt.limit(1)).scalar_one_or_none()
+
+    def mark_executed(self, approval_id: str) -> ApprovalRequest:
+        row = self.get(approval_id)
+        row.executed_at = now_iso()
+        self.session.flush()
+        self.audit.record("approval.executed", "approval", row.id, "ai", {"tool": row.tool_name})
+        return row
+
     def resolve(
         self, approval_id: str, approve: bool, comment: str | None = None, actor: str = "user"
     ) -> ApprovalRequest:

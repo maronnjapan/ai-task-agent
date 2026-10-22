@@ -53,9 +53,23 @@ class WindowsPlatformAdapter(PlatformAdapter):
     def task_name(self, label: str) -> str:
         return label.replace(".", "_")
 
+    def wrapper_path(self, spec: AutostartSpec) -> Path:
+        return spec.log_directory.parent / "autostart.cmd"
+
+    def render_wrapper(self, spec: AutostartSpec) -> str:
+        """Task Scheduler runs a bare command; the wrapper restores cwd, environment and logging."""
+        lines = ["@echo off", f'cd /d "{spec.working_directory}"']
+        for key, value in spec.environment.items():
+            lines.append(f"set {key}={value}")
+        command = subprocess.list2cmdline(spec.command)
+        log_file = spec.log_directory / "autostart.log"
+        lines.append(f'{command} >> "{log_file}" 2>&1')
+        return "\r\n".join(lines) + "\r\n"
+
     def install_autostart(self, spec: AutostartSpec) -> str:
         spec.log_directory.mkdir(parents=True, exist_ok=True)
-        command = subprocess.list2cmdline(spec.command)
+        wrapper = self.wrapper_path(spec)
+        wrapper.write_text(self.render_wrapper(spec), encoding="utf-8")
         name = self.task_name(spec.label)
         result = self._run(
             [
@@ -67,7 +81,7 @@ class WindowsPlatformAdapter(PlatformAdapter):
                 "/TN",
                 name,
                 "/TR",
-                command,
+                f'"{wrapper}"',
             ]
         )
         if result.returncode != 0:

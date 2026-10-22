@@ -13,6 +13,7 @@ class ScheduledAction(Base):
             "status IN ('pending','running','done','cancelled')", name="ck_scheduled_actions_status"
         ),
         Index("ix_scheduled_actions_due", "status", "scheduled_at"),
+        Index("ix_scheduled_actions_task", "task_id"),
     )
 
     id: Mapped[str] = id_column()
@@ -61,6 +62,7 @@ class Notification(Base):
         CheckConstraint("status IN ('unread','read')", name="ck_notifications_status"),
         Index("ix_notifications_created", "created_at"),
         Index("ix_notifications_dedupe", "dedupe_key"),
+        Index("ix_notifications_task", "task_id"),
     )
 
     id: Mapped[str] = id_column()
@@ -127,6 +129,7 @@ class ApprovalRequest(Base):
             "status IN ('pending','approved','rejected','expired')", name="ck_approval_requests_status"
         ),
         Index("ix_approval_requests_status", "status"),
+        Index("ix_approval_requests_connection", "connection_id"),
     )
 
     id: Mapped[str] = id_column()
@@ -145,3 +148,4 @@ class ApprovalRequest(Base):
     result: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = ts_column()
     resolved_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    executed_at: Mapped[str | None] = mapped_column(String, nullable=True)

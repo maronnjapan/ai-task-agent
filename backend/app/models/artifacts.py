@@ -14,6 +14,7 @@ class TaskArtifact(Base):
             name="ck_task_artifacts_status",
         ),
         Index("ix_task_artifacts_task", "task_id"),
+        Index("ix_task_artifacts_plan", "execution_plan_id"),
     )
 
     id: Mapped[str] = id_column()
@@ -45,7 +46,10 @@ class TaskArtifact(Base):
 
 class ArtifactVersion(Base):
     __tablename__ = "artifact_versions"
-    __table_args__ = (UniqueConstraint("artifact_id", "version", name="uq_artifact_versions_version"),)
+    __table_args__ = (
+        UniqueConstraint("artifact_id", "version", name="uq_artifact_versions_version"),
+        Index("ix_artifact_versions_artifact", "artifact_id"),
+    )
 
     id: Mapped[str] = id_column()
     artifact_id: Mapped[str] = mapped_column(

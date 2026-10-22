@@ -75,11 +75,23 @@ def ctx(settings: Settings, platform: LinuxPlatformAdapter) -> Iterator[AppConte
     context.db.dispose()
 
 
+def make_test_client(ctx: AppContext, with_session: bool = True) -> TestClient:
+    """TestClient for ``ctx``: allows the ``testserver`` Host and opens the tokenised URL for a session cookie."""
+    from app.main import session_token
+
+    app = create_app(ctx, serve_frontend=False, extra_hosts={"testserver"})
+    test_client = TestClient(app)
+    test_client.headers.update(CSRF)
+    if with_session:
+        token = session_token(ctx)
+        if token:
+            test_client.get("/", params={"token": token})
+    return test_client
+
+
 @pytest.fixture
 def client(ctx: AppContext) -> Iterator[TestClient]:
-    app = create_app(ctx, serve_frontend=False)
-    with TestClient(app) as test_client:
-        test_client.headers.update(CSRF)
+    with make_test_client(ctx) as test_client:
         yield test_client
 
 

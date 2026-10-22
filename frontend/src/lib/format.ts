@@ -114,14 +114,14 @@ export const PLAN_STATUS_LABELS: Record<string, string> = {
   planned: '計画済み',
   running: '実行中',
   reviewing: 'レビュー中',
-  review_pending: '確認待ち',
-  completed: '完了',
-  done: '完了',
-  failed: '失敗',
-  cancelled: 'キャンセル',
+  passed: '合格 (確認待ち)',
+  failed: '不合格',
   blocked: 'ブロック',
-  superseded: '再計画済み'
+  replanned: '再計画済み',
+  cancelled: 'キャンセル'
 };
+
+export const PLAN_STATUS_ORDER = ['planned', 'running', 'reviewing', 'passed', 'failed', 'blocked', 'replanned', 'cancelled'] as const;
 
 export const WORK_ITEM_STATUS_LABELS: Record<string, string> = {
   pending: '待機',
@@ -145,7 +145,7 @@ export const RUN_STATUS_LABELS: Record<string, string> = {
 export const REVIEW_STATUS_LABELS: Record<string, string> = {
   passed: '合格',
   failed: '不合格',
-  pending: '保留'
+  blocked: '追加情報待ち'
 };
 
 export const ARTIFACT_STATUS_LABELS: Record<string, string> = {
@@ -164,9 +164,9 @@ export const APPROVAL_STATUS_LABELS: Record<string, string> = {
 
 export const SCHEDULE_STATUS_LABELS: Record<string, string> = {
   pending: '予定',
-  processed: '実行済み',
-  cancelled: 'キャンセル',
-  failed: '失敗'
+  running: '実行中',
+  done: '実行済み',
+  cancelled: 'キャンセル'
 };
 
 export const DECISION_STATUS_LABELS: Record<string, string> = {
@@ -251,16 +251,18 @@ export const AUTONOMY_LABELS: Record<string, string> = {
   proactive: '積極的'
 };
 
+// Backend vocabulary (manager_settings.reminder_aggressiveness CHECK constraint)
 export const REMINDER_LABELS: Record<string, string> = {
-  quiet: '控えめ',
-  normal: '通常',
-  aggressive: '積極的'
+  low: '控えめ (期限 12 時間前から)',
+  normal: '通常 (期限 24 時間前から)',
+  high: '積極的 (期限 72 時間前から)'
 };
 
+// Desktop notification threshold (NotificationSettings.level)
 export const NOTIFICATION_SETTING_LEVELS: Record<string, string> = {
-  minimal: '最小限',
-  normal: '通常',
-  verbose: '詳細'
+  low: '重要なものだけ (high)',
+  normal: '通常以上 (normal, high)',
+  high: 'すべて (low, normal, high)'
 };
 
 export function label(map: Record<string, string>, key: string | null | undefined, fallback?: string): string {

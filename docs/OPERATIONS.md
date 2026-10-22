@@ -9,6 +9,10 @@
 
 UI: `http://127.0.0.1:8765`（`.env` の `APP_HOST` / `APP_PORT` で変更可能）。
 
+### セッション保護（SPEC 6.4）
+
+ローカル API はセッショントークンで保護されています。`aiwm start`（および start スクリプト）が表示する `http://127.0.0.1:8765/?token=...` を一度ブラウザで開くと、HttpOnly / SameSite=Strict の Cookie が保存され、以後はトークンなしの URL で利用できます。トークンは `<data dir>/config/session.token`（所有者のみ読み書き可）に保存され、`uv run aiwm url` で再表示できます。CLI から API を呼ぶ場合は `X-AIWM-Token` ヘッダーに同じ値を付けます。`.env` の `API_SESSION_TOKEN_REQUIRED=false` で無効化できます（非推奨）。
+
 ## データディレクトリ
 
 | OS | 既定 |
@@ -68,3 +72,5 @@ uv run aiwm restore <archive.zip> [--yes]   # 停止中に実行。復元前に�
 | Manager が動かない | AI マネージャー画面で一時停止状態を確認、`今すぐ実行` を押す。`logs/app.log` を確認 |
 | WSL からブラウザが開かない | Windows 側ブラウザで `http://localhost:8765` を直接開く（WSL2 は localhost を転送） |
 | MCP 接続テスト失敗 | 設定画面の `last_error` を確認。stdio の場合はコマンドのパス（`npx`, `uvx`）が通っているか確認 |
+| API が 401 `session_required` を返す | トークン付き URL（`uv run aiwm url`）を開き直す。別ブラウザ・シークレットウィンドウでは再度必要 |
+| 「外部操作の承認が必要です」通知 | タスク一覧の「承認待ち」で承認/却下。承認すると該当する作業が自動で再開 |

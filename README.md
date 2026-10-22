@@ -31,9 +31,11 @@
 ```bash
 git clone <this repository> ai-work-manager && cd ai-work-manager
 ./scripts/install.sh          # uv / 依存関係 / フロントエンドビルド / .env 作成 / API キー登録（Keychain）
-./scripts/start.sh --open     # http://127.0.0.1:8765 をブラウザで開く
+./scripts/start.sh --open     # セッショントークン付き URL をブラウザで開く
 ./scripts/stop.sh
 ```
+
+起動時に表示される `http://127.0.0.1:8765/?token=...` を一度開くとブラウザにセッション Cookie が保存され、以後は `http://127.0.0.1:8765` だけでアクセスできます（URL は `cd backend && uv run aiwm url` でいつでも再表示できます）。
 
 初回起動時に API キーが未登録なら CLI が入力を求め、macOS Keychain に保存します（`.env` の API キー欄は空のままで OK）。自動起動（launchd）は設定画面か `./scripts/install.sh --autostart` で登録できます。
 
@@ -78,6 +80,8 @@ cd ../frontend && npm install && npm run build   # UI をビルド（FastAPI が
 | `AIWM_DATA_DIR` | データ保存先（既定: macOS/WSL `~/.ai-work-manager/`、Windows `%LOCALAPPDATA%\AIWorkManager\`） |
 | `MANAGER_MODEL` 等 | エージェントごとのモデル。設定画面でプロバイダー・温度・タイムアウト・再試行・カスタムプロンプトも変更可 |
 | `AUTO_START_MANAGER` | 起動時に Manager AI の自律実行を開始するか |
+| `API_SESSION_TOKEN_REQUIRED` | ローカル API のセッション保護（既定 true。`false` でトークンなしアクセスを許可） |
+| `MCP_APPROVAL_WAIT_SECONDS` | external_write ツールの承認を Worker が待つ秒数（既定 300） |
 
 ## CLI
 
@@ -85,6 +89,7 @@ cd ../frontend && npm install && npm run build   # UI をビルド（FastAPI が
 cd backend
 uv run aiwm start [--open] [--no-prompt]   # バックエンド起動
 uv run aiwm setup                            # API キーの対話登録
+uv run aiwm url                              # セッショントークン付きの UI URL を表示
 uv run aiwm stop | status                    # 停止 / 状態表示
 uv run aiwm backup [--directory DIR]         # バックアップ
 uv run aiwm restore <archive.zip>            # 復元（復元前に自動バックアップ）

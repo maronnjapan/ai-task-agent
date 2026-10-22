@@ -80,6 +80,9 @@ def patch_settings(
         changed.append("backup")
     AuditService(session).record("settings.updated", "settings", None, "user", {"sections": changed})
     session.commit()
+    from app.main import write_settings_snapshot
+
+    write_settings_snapshot(ctx)
     ctx.broker.publish("settings.updated", {"sections": changed})
     return _settings_out(session, ctx)
 

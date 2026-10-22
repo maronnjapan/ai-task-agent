@@ -50,6 +50,20 @@ class DotEnvSecretProvider:
                 os.chmod(self.path, stat.S_IRUSR | stat.S_IWUSR)
             except OSError:
                 pass
+            return
+        # Windows: drop inherited ACEs and grant only the current user (best effort).
+        try:  # pragma: no cover - Windows only
+            import subprocess
+
+            user = os.environ.get("USERNAME")
+            if user:
+                subprocess.run(
+                    ["icacls", str(self.path), "/inheritance:r", "/grant:r", f"{user}:F"],
+                    capture_output=True,
+                    check=False,
+                )
+        except Exception:  # noqa: BLE001
+            pass
 
     def get_secret(self, name: str) -> str | None:
         for line in self._read_lines():

@@ -74,6 +74,7 @@ Plan 実行 → Review
 ## セキュリティ（SPEC 27）
 
 - API は `127.0.0.1` にバインド。`Host` 検証、`Origin` 検証、変更系リクエストに `X-Requested-With: AIWM` ヘッダーを要求（CSRF 対策）。FastAPI の strict content-type も有効。
+- セッション保護: インストールごとのランダムトークン（`config/session.token`, 0600）。トークン付き URL を開いたブラウザだけが HttpOnly / SameSite=Strict Cookie を受け取り、CLI は `X-AIWM-Token` ヘッダーを使う。OAuth コールバックのみ state パラメータで保護。
 - API キーは Secret Provider からメモリ上で注入し、ログは `SecretRedactingFilter` でマスク、フロントエンドには設定済みフラグのみ返します。
 - ローカルファイルアクセスは設定したディレクトリと拡張子に限定。成果物パスはディレクトリ外参照を拒否。
 - 外部データ（MCP 結果・ファイル内容）は「外部データ」マーカー付きで LLM に渡し、含まれる指示には従わないようプロンプトで指示します。権限はツールごとの設定のみで変更できます。

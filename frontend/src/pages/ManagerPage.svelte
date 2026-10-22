@@ -9,6 +9,7 @@
   import StatusBadge from '../components/StatusBadge.svelte';
   import PlanDetail from '../components/PlanDetail.svelte';
   import AgentRunList from '../components/AgentRunList.svelte';
+  import MemoryManager from '../components/MemoryManager.svelte';
   import Loading from '../components/Loading.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
   import { MANAGER_STATE_LABELS, NOTIFICATION_LEVEL_LABELS, formatDateTime, formatRelative, label } from '../lib/format';
@@ -310,6 +311,8 @@
       </div>
     {/if}
   </section>
+
+  <MemoryManager />
 
   <section class="card" aria-labelledby="notif-title">
     <div class="card-title"><h2 id="notif-title">通知履歴 <span class="muted small">({historyTotal})</span></h2></div>

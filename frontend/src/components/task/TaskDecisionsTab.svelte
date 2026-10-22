@@ -57,10 +57,30 @@
     }
   }
 
+  let supersedes: DecisionOut | null = $state(null);
+
+  async function supersede() {
+    const text = content.trim();
+    if (!text || adding || !supersedes) return;
+    adding = true;
+    try {
+      await api.tasks.addDecision(taskId, { content: text, supersedes_id: supersedes.id });
+      content = '';
+      supersedes = null;
+      toast.success('決定事項を置き換えました', '以前の決定は履歴として残ります');
+      await load();
+    } catch {
+      // banner
+    } finally {
+      adding = false;
+    }
+  }
+
   onMount(() => {
     void load();
+    const reload = debounced(() => void load(), 200);
     return onEvent('decision.recorded', (event) => {
-      if ((event.data as { task_id?: string }).task_id === taskId) debounced(() => void load(), 200)();
+      if ((event.data as { task_id?: string }).task_id === taskId) reload();
     });
   });
 </script>
@@ -88,6 +108,7 @@
               {#if d.source_message_id}<span title={d.source_message_id}>チャット由来</span>{/if}
               <span class="spacer"></span>
               {#if d.status === 'active'}
+                <button type="button" class="btn btn-ghost btn-sm" onclick={() => { supersedes = d; content = d.content; }}>置き換える</button>
                 <button type="button" class="btn btn-ghost btn-sm text-danger" onclick={() => void revoke(d)}>取り消す</button>
               {/if}
             </div>
@@ -98,15 +119,20 @@
   </section>
 
   <section class="card" aria-labelledby="dec-add-title">
-    <div class="card-title"><h3 id="dec-add-title">決定事項を追加</h3></div>
-    <p class="small muted">ここに記録した内容は正式な決定として扱われ、AI は以降の作業でこれに従います。</p>
-    <form class="stack" onsubmit={(e) => { e.preventDefault(); void add(); }}>
+    <div class="card-title"><h3 id="dec-add-title">{supersedes ? '決定事項を置き換える' : '決定事項を追加'}</h3></div>
+    {#if supersedes}
+      <div class="alert alert-info small">「{supersedes.content.slice(0, 80)}」を新しい決定で置き換えます。以前の決定は「上書き済み」として履歴に残ります。</div>
+    {:else}
+      <p class="small muted">ここに記録した内容は正式な決定として扱われ、AI は以降の作業でこれに従います。</p>
+    {/if}
+    <form class="stack" onsubmit={(e) => { e.preventDefault(); void (supersedes ? supersede() : add()); }}>
       <label class="field">
         <span class="sr-only">決定内容</span>
         <textarea rows="4" bind:value={content} placeholder="例: 報告書の対象期間は 2026年Q3 とする" disabled={adding}></textarea>
       </label>
       <div class="form-actions">
-        <button type="submit" class="btn btn-primary" disabled={adding || !content.trim()}>記録する</button>
+        <button type="submit" class="btn btn-primary" disabled={adding || !content.trim()}>{supersedes ? '置き換えて記録する' : '記録する'}</button>
+        {#if supersedes}<button type="button" class="btn" disabled={adding} onclick={() => { supersedes = null; content = ''; }}>キャンセル</button>{/if}
       </div>
     </form>
   </section>

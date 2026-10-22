@@ -19,7 +19,33 @@
   let busy: Record<string, boolean> = $state({});
   let testResults: Record<string, ConnectionTestOut> = $state({});
   let tools: Record<string, ToolOut[]> = $state({});
+  let toolEdits: Record<string, Record<string, { permission: string; enabled: boolean }>> = $state({});
   let dialog: ConfirmDialog | undefined = $state();
+
+  const PERMISSIONS = ['read', 'internal_write', 'external_write'];
+
+  function seedToolEdits(id: string, list: ToolOut[]) {
+    const edits: Record<string, { permission: string; enabled: boolean }> = {};
+    for (const t of list) edits[t.name] = { permission: t.permission ?? 'read', enabled: t.enabled !== false };
+    toolEdits[id] = edits;
+  }
+
+  async function saveToolPermissions(c: IntegrationOut) {
+    const edits = toolEdits[c.id];
+    if (!edits) return;
+    busy[c.id] = true;
+    try {
+      await api.integrations.update(c.id, {
+        tool_permissions: Object.entries(edits).map(([tool_name, e]) => ({ tool_name, permission: e.permission, enabled: e.enabled }))
+      });
+      toast.success('ツール権限を保存しました', c.name);
+      await load();
+    } catch {
+      // banner
+    } finally {
+      busy[c.id] = false;
+    }
+  }
 
   async function load() {
     try {
@@ -55,8 +81,11 @@
     busy[c.id] = true;
     try {
       testResults[c.id] = await api.integrations.test(c.id);
-      if (testResults[c.id].ok) toast.success(`接続成功: ${c.name}`, testResults[c.id].message);
-      else toast.error(`接続失敗: ${c.name}`, testResults[c.id].message);
+      if (testResults[c.id].ok) {
+        toast.success(`接続成功: ${c.name}`, testResults[c.id].message);
+        tools[c.id] = testResults[c.id].tools ?? [];
+        seedToolEdits(c.id, tools[c.id]);
+      } else toast.error(`接続失敗: ${c.name}`, testResults[c.id].message);
       await load();
     } catch {
       // banner
@@ -69,6 +98,7 @@
     busy[c.id] = true;
     try {
       tools[c.id] = await api.integrations.tools(c.id);
+      seedToolEdits(c.id, tools[c.id]);
     } catch {
       // banner
     } finally {
@@ -225,16 +255,29 @@
                       <tr><td colspan="4" class="empty">ツールがありません</td></tr>
                     {/if}
                     {#each tools[c.id] as t (t.name)}
-                      <tr>
-                        <td class="mono small">{t.name}</td>
-                        <td class="small">{label(TOOL_PERMISSION_LABELS, t.permission ?? 'read')}</td>
-                        <td class="small">{t.enabled === false ? '無効' : '有効'}</td>
-                        <td class="small muted">{t.description ?? ''}</td>
-                      </tr>
+                      {#if toolEdits[c.id]?.[t.name]}
+                        <tr>
+                          <td class="mono small">{t.name}</td>
+                          <td class="small">
+                            <select class="select-sm" aria-label="{t.name} の権限" bind:value={toolEdits[c.id][t.name].permission}>
+                              {#each PERMISSIONS as p (p)}<option value={p}>{label(TOOL_PERMISSION_LABELS, p)}</option>{/each}
+                            </select>
+                          </td>
+                          <td class="small"><input type="checkbox" aria-label="{t.name} を有効にする" bind:checked={toolEdits[c.id][t.name].enabled} /></td>
+                          <td class="small muted">{t.description ?? ''}</td>
+                        </tr>
+                      {/if}
                     {/each}
                   </tbody>
                 </table>
               </div>
+              {#if tools[c.id].length > 0}
+                <div class="row small" style="margin-top:0.35rem">
+                  <span class="muted">外部書き込みは実行前にユーザー承認が必要です。未分類のツールは安全のため外部書き込み扱いになります。</span>
+                  <span class="spacer"></span>
+                  <button type="button" class="btn btn-sm btn-primary" disabled={busy[c.id]} onclick={() => void saveToolPermissions(c)}>ツール権限を保存</button>
+                </div>
+              {/if}
             {/if}
           </li>
         {/each}

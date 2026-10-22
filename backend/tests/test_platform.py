@@ -70,6 +70,15 @@ def test_windows_task_scheduler_and_toast(tmp_path: Path):
     name = adapter.install_autostart(spec(tmp_path))
     create = runner.calls[-1]
     assert create[:2] == ["schtasks.exe", "/Create"] and "ONLOGON" in create and name in create
+    wrapper = adapter.wrapper_path(spec(tmp_path))
+    assert wrapper.exists() and str(wrapper) in create[-1]
+    body = wrapper.read_text()
+    assert (
+        'cd /d "' in body
+        and "set AIWM_ENV_FILE=" in body
+        and "aiwm start" in body
+        and "autostart.log" in body
+    )
     assert adapter.is_autostart_installed("com.aiworkmanager.test") and runner.calls[-1][1] == "/Query"
     assert adapter.remove_autostart("com.aiworkmanager.test") and runner.calls[-1][1] == "/Delete"
     assert adapter.show_notification("Hi", "It's done")
@@ -91,8 +100,10 @@ def test_linux_systemd_and_profile_fallback(tmp_path: Path):
     adapter._which = lambda b: "/usr/bin/systemctl" if b == "systemctl" else None  # type: ignore[method-assign]
     path = Path(adapter.install_autostart(spec(tmp_path)))
     assert path == tmp_path / ".config" / "systemd" / "user" / "com.aiworkmanager.test.service"
-    assert "ExecStart=/usr/bin/uv run aiwm start" in path.read_text()
-    assert ["systemctl", "--user", "enable", "--now", "com.aiworkmanager.test.service"] in runner.calls
+    unit = path.read_text()
+    assert "ExecStart=/usr/bin/uv run aiwm start" in unit and "RestartPreventExitStatus=2" in unit
+    assert ["systemctl", "--user", "enable", "com.aiworkmanager.test.service"] in runner.calls
+    assert not any("--now" in call for call in runner.calls)  # never start a second instance while running
     assert adapter.is_autostart_installed("com.aiworkmanager.test")
     assert adapter.remove_autostart("com.aiworkmanager.test") and not path.exists()
     # no systemd -> ~/.profile block

@@ -105,7 +105,7 @@ class BackupService:
             removed += 1
         return removed
 
-    def restore(self, archive: Path) -> BackupInfo:
+    def restore(self, archive: Path, safety_directory: Path | None = None) -> BackupInfo:
         """Restore from ``archive``. The current data is backed up first (SPEC 24.5)."""
         archive = Path(archive)
         if not archive.exists():
@@ -114,7 +114,7 @@ class BackupService:
             names = zf.namelist()
             if "data/app.db" not in names:
                 raise ValueError("Archive does not contain data/app.db")
-            safety = self.create(label="pre-restore")
+            safety = self.create(safety_directory, label="pre-restore")
             # database
             self.paths.data.mkdir(parents=True, exist_ok=True)
             for suffix in ("", "-wal", "-shm"):

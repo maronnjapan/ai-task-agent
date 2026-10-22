@@ -54,6 +54,7 @@ class TaskVersion(Base):
     __table_args__ = (
         UniqueConstraint("task_id", "version", name="uq_task_versions_task_version"),
         CheckConstraint("changed_by IN ('user','ai','system')", name="ck_task_versions_changed_by"),
+        Index("ix_task_versions_task", "task_id"),
     )
 
     id: Mapped[str] = id_column()

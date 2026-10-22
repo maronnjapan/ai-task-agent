@@ -34,7 +34,10 @@ class SchedulerService:
         payload: dict | None = None,
         replace: bool = False,
     ) -> ScheduledAction:
-        parse_iso(scheduled_at)  # validate
+        parsed = parse_iso(scheduled_at)  # validate and normalise to UTC (lexical comparisons rely on it)
+        if parsed is None:
+            raise ValueError("scheduled_at is required")
+        scheduled_at = parsed.isoformat()
         if replace:
             for row in self.pending(action_type=action_type, task_id=task_id):
                 row.status = "cancelled"

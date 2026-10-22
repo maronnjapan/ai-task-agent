@@ -33,8 +33,10 @@ def plan_script(
     """Manager script: create a plan for ``task_ids`` then its work items."""
 
     def create_items(messages):
-        plan_id = last_tool_json(messages)["plan_id"]
-        return tool_call("create_work_items", plan_id=plan_id, items=items)
+        payload = last_tool_json(messages)
+        if not isinstance(payload, dict) or "plan_id" not in payload:
+            return {"content": f"計画を作成できませんでした: {payload}"}
+        return tool_call("create_work_items", plan_id=payload["plan_id"], items=items)
 
     return [
         tool_call(
@@ -156,11 +158,13 @@ async def test_full_cycle_multi_task_plan_passes_and_waits_for_user(ctx: AppCont
         review = exec_service.latest_review(plans[0].id)
         assert review.status == "passed" and {r.task_id for r in review.task_results} == {a, b}
     assert any(n.title == "成果物の確認をお願いします" for n in notifications(ctx))
-    assert orch.queue.pending_count() == 1  # fresh manager execution queued
+    assert orch.queue.pending_count() >= 1  # fresh manager execution queued
     assert orch.status.consecutive_no_progress == 0
     # fresh manager run re-evaluates all tasks with their new state
     models["manager"].push({"content": "確認待ちのため実行する作業はありません"})
-    await orch.run_cycle(orch.queue.drain())
+    queued = orch.queue.drain()
+    assert {t.type for t in queued} >= {"reevaluate", "review_completed", "work_item_completed"}
+    await orch.run_cycle(queued)
     prompt = models["manager"].calls[-1][-1].content
     assert "review_pending" in prompt and a in prompt
     assert orch.status.consecutive_no_progress == 1

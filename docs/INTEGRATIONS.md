@@ -21,7 +21,7 @@ OS ごとのコマンド解決（`npx` → Windows では `npx.cmd`、`~` 展開
 | `oauth2` | 認可コードフロー（PKCE）。`auth_config` に `client_id`, `authorization_url`, `token_url`, `scope`, `redirect_uri`（既定 `http://127.0.0.1:8765/api/integrations/oauth/callback`）を設定。クライアントシークレットは `secret` に入力。「OAuth 認証」ボタン → ブラウザで認可 → コールバックでトークン取得。期限切れ時は自動更新、401 時は再認証 |
 | `custom` | Adapter が提供する固有の認証 |
 
-トークン・シークレットはすべて Secret Provider（Keychain / .env）に保存され、SQLite には保存されません。
+トークン・シークレットはすべて Secret Provider（Keychain / .env）に保存され、SQLite には保存されません。環境変数（`env`）や HTTP ヘッダーのうち名前に `TOKEN` / `KEY` / `SECRET` / `PASSWORD` / `AUTHORIZATION` などを含むものも自動的に Secret Provider へ移され、SQLite と API 応答には `<secret>` というプレースホルダーだけが残ります（値を空にすると削除）。
 
 ## 標準 Adapter とプリセット
 
@@ -43,7 +43,7 @@ Adapter は検索ツールの選択、引数の変換（例: Jira の JQL、Conf
 | `internal_write` | アプリ内への書き込み。自由に実行 |
 | `external_write` | 実行前にユーザー承認が必要。承認待ちはタスク一覧の「承認待ち」に表示され、承認/却下できます |
 
-権限はツール名から自動分類され（`post`, `send`, `create`, `update`, `delete` などは `external_write`）、接続設定の「ツール権限」で上書きできます。外部文書に含まれる指示で権限が変わることはありません。Slack への投稿、外部文書の更新、メール送信は承認なしでは実行されません。
+権限はツール名から自動分類され（`search`, `get`, `list`, `read` などは `read`、`post`, `send`, `create`, `update`, `delete` などは `external_write`、判別できない名前は安全のため `external_write`）、接続テスト / ツール一覧の表で上書きできます。`external_write` の呼び出しは承認要求（通知 + タスク一覧の「承認待ち」）を作成し、Worker は `MCP_APPROVAL_WAIT_SECONDS` の間承認を待ちます。間に合わなかった場合は作業が `blocked` になり、あとから承認すると該当作業が自動で再開され、承認済みの呼び出しは一度だけ実行されます。外部文書に含まれる指示で権限が変わることはありません。Slack への投稿、外部文書の更新、メール送信は承認なしでは実行されません。
 
 ## ローカルファイル
 

@@ -8,6 +8,8 @@ from typing import Any
 from app.models import MCPConnection
 from app.utils import loads
 
+SECRET_PLACEHOLDER = "<secret>"
+
 
 @dataclass
 class ConnectionConfig:
@@ -53,6 +55,33 @@ class ConnectionConfig:
 
     def secret_name(self) -> str:
         return self.secret_ref or f"MCP_{self.id.replace('-', '_').upper()}_SECRET"
+
+    def env_secret_name(self, key: str) -> str:
+        return f"MCP_{self.id.replace('-', '_').upper()}_ENV_{key.upper()}"
+
+    def header_secret_name(self, key: str) -> str:
+        safe = "".join(ch if ch.isalnum() else "_" for ch in key.upper())
+        return f"MCP_{self.id.replace('-', '_').upper()}_HEADER_{safe}"
+
+    def resolve_secrets(self, secret_store) -> ConnectionConfig:
+        """Replace ``SECRET_PLACEHOLDER`` values in env/headers with the stored secrets."""
+        env = {}
+        for key, value in self.env.items():
+            env[key] = (
+                (secret_store.get_secret(self.env_secret_name(key)) or "")
+                if value == SECRET_PLACEHOLDER
+                else value
+            )
+        headers = {}
+        for key, value in self.headers.items():
+            headers[key] = (
+                (secret_store.get_secret(self.header_secret_name(key)) or "")
+                if value == SECRET_PLACEHOLDER
+                else value
+            )
+        self.env = env
+        self.headers = headers
+        return self
 
     def oauth_secret_name(self) -> str:
         return f"MCP_{self.id.replace('-', '_').upper()}_OAUTH"

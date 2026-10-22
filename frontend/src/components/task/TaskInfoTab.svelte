@@ -30,8 +30,17 @@
     };
   }
 
+  // Reload the form when the task changes, unless the user has unsaved edits (SSE reloads must not
+  // discard them). A different task id always resets.
+  let formTaskId = $state('');
   $effect(() => {
-    resetForm(task);
+    const incoming = task;
+    if (incoming.id !== formTaskId) {
+      formTaskId = incoming.id;
+      resetForm(incoming);
+      return;
+    }
+    if (!dirty) resetForm(incoming);
   });
 
   // Compare the due date at minute precision: that is all <input type="datetime-local"> can express.

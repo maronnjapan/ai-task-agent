@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -110,8 +111,17 @@ class MCPClient:
 
     # --- lifecycle --------------------------------------------------
     async def connect(self) -> None:
+        """Open the session; a 401/403 during initialisation triggers one token refresh and retry."""
         if self.connected:
             return
+        try:
+            await self._connect_once()
+        except MCPUnauthorized:
+            if not await self.auth.on_unauthorized():
+                raise
+            await self._connect_once()
+
+    async def _connect_once(self) -> None:
         loop = asyncio.get_running_loop()
         self._queue = asyncio.Queue()
         self._ready = loop.create_future()
@@ -123,6 +133,8 @@ class MCPClient:
             raise MCPConnectionError(f"timeout connecting to {self.config.name}") from exc
         except Exception as exc:
             await self.disconnect()
+            if is_unauthorized(exc):
+                raise MCPUnauthorized(f"{self.config.name} rejected the credentials: {exc}") from exc
             raise MCPConnectionError(f"failed to connect to {self.config.name}: {exc}") from exc
 
     async def disconnect(self) -> None:
@@ -251,10 +263,34 @@ class MCPClient:
         finally:
             if not ready.done():
                 ready.set_exception(MCPConnectionError("session closed before initialisation"))
+            # Never leave callers waiting on a closed session (shutdown / unauthorized exit paths).
+            while not queue.empty():
+                pending = queue.get_nowait()
+                if pending.future and not pending.future.done():
+                    pending.future.set_exception(MCPConnectionError(f"{self.config.name} session closed"))
+
+
+_UNAUTHORIZED = re.compile(
+    r"(\b40[13]\b|unauthori[sz]ed|forbidden|invalid[_ ]token|token (has )?expired)", re.IGNORECASE
+)
+
+
+def is_unauthorized(exc: BaseException) -> bool:
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if status in (401, 403):
+        return True
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, MCPUnauthorized) or _UNAUTHORIZED.search(str(current)):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def _classify(exc: Exception) -> Exception:
-    text = str(exc)
-    if "401" in text or "Unauthorized" in text or "403" in text:
-        return MCPUnauthorized(text)
+    if is_unauthorized(exc):
+        return MCPUnauthorized(str(exc))
     return exc

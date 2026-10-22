@@ -42,7 +42,7 @@ async def open_transport(
         params = StdioServerParameters(
             command=resolve_command(config.command),
             args=list(config.args),
-            env={**os.environ, **config.env} if config.env else None,
+            env=dict(config.env) if config.env else None,  # the SDK adds its safe default environment
         )
         async with stdio_client(params) as streams:
             yield streams[0], streams[1]

@@ -63,6 +63,8 @@ class LocalFileSource:
             scanned += 1
             if scanned > max_files:
                 break
+            if not self.is_allowed(path):  # symlinks resolving outside the configured directories
+                continue
             try:
                 if path.stat().st_size > self.max_bytes:
                     continue

@@ -157,6 +157,12 @@ class ExecutionService:
             if parent.status in [str(s) for s in ACTIVE_PLAN_STATUSES] or parent.status == PlanStatus.FAILED:
                 parent.status = PlanStatus.REPLANNED
                 parent.updated_at = now_iso()
+            # Work that never ran in the superseded plan is skipped (SPEC 11.2).
+            for item in self.list_work_items(parent.id):
+                if item.status in (WorkItemStatus.PENDING, WorkItemStatus.BLOCKED):
+                    item.status = WorkItemStatus.SKIPPED
+                    item.result = dumps({"status": "skipped", "summary": "再計画により不要になりました"})
+                    item.updated_at = now_iso()
         plan = ExecutionPlan(
             parent_plan_id=parent_plan_id,
             objective=objective,
@@ -183,6 +189,10 @@ class ExecutionService:
             self.broker.publish(
                 "plan.created", {"plan_id": plan.id, "task_ids": task_ids, "parent_plan_id": parent_plan_id}
             )
+            if parent_plan_id:
+                self.broker.publish(
+                    "plan.updated", {"plan_id": parent_plan_id, "status": "replanned", "task_ids": task_ids}
+                )
         return plan
 
     def set_plan_status(self, plan_id: str, status: str, actor: str = "system") -> ExecutionPlan:
@@ -192,7 +202,14 @@ class ExecutionService:
         self.session.flush()
         self.audit.record("plan.status", "execution_plan", plan.id, actor, {"status": plan.status})
         if self.broker:
-            self.broker.publish("plan.updated", {"plan_id": plan.id, "status": plan.status})
+            self.broker.publish(
+                "plan.updated",
+                {
+                    "plan_id": plan.id,
+                    "status": plan.status,
+                    "task_ids": [link.task_id for link in plan.task_links],
+                },
+            )
         return plan
 
     def plan_task_ids(self, plan_id: str) -> list[str]:
@@ -491,7 +508,13 @@ class ExecutionService:
 
     # --- reviews ------------------------------------------------------
     def record_review(
-        self, plan_id: str, run_id: str, status: str, feedback: str, task_results: list[dict[str, Any]]
+        self,
+        plan_id: str,
+        run_id: str,
+        status: str,
+        feedback: str,
+        task_results: list[dict[str, Any]],
+        strict: bool = True,
     ) -> Review:
         plan = self.get_plan(plan_id)
         plan_tasks = set(self.plan_task_ids(plan_id))
@@ -505,15 +528,21 @@ class ExecutionService:
         for entry in task_results:
             task_id = str(entry.get("task_id") or "")
             if task_id not in plan_tasks:
-                raise ValidationError(f"Review result references a task outside the plan: {task_id}")
+                if strict:
+                    raise ValidationError(f"Review result references a task outside the plan: {task_id}")
+                continue  # the reviewer referenced an unknown id; ignore it (SPEC 23.4 integrity)
             if task_id in seen:
                 continue
             seen.add(task_id)
+            try:
+                task_status = str(ReviewStatus(str(entry.get("status", status)).lower()))
+            except ValueError:
+                task_status = status
             self.session.add(
                 ReviewTaskResult(
                     review_id=review.id,
                     task_id=task_id,
-                    status=str(ReviewStatus(entry.get("status", status))),
+                    status=task_status,
                     feedback=entry.get("feedback"),
                 )
             )

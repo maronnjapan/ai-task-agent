@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import urlencode
 
+from app.infrastructure.logging import register_secret
 from app.infrastructure.secrets.base import SecretProvider
 from app.integrations.mcp.config import ConnectionConfig
 
@@ -137,14 +138,24 @@ class OAuth2Auth:
     auth_type = "oauth2"
 
     def __init__(
-        self, config: ConnectionConfig, secret_store: SecretProvider, http_post: HttpPost | None = None
+        self,
+        config: ConnectionConfig,
+        secret_store: SecretProvider,
+        http_post: HttpPost | None = None,
+        default_redirect_uri: str | None = None,
     ):
         self.config = config
         self.secret_store = secret_store
         self.http_post = http_post or default_http_post
         self.settings = config.auth_config
         self.secret_name = config.oauth_secret_name()
+        self.default_redirect_uri = (
+            default_redirect_uri or "http://127.0.0.1:8765/api/integrations/oauth/callback"
+        )
         self._tokens: OAuthTokens | None = OAuthTokens.from_json(secret_store.get_secret(self.secret_name))
+        if self._tokens:
+            register_secret(self._tokens.access_token)
+            register_secret(self._tokens.refresh_token)
 
     # --- settings ---------------------------------------------------
     @property
@@ -157,7 +168,7 @@ class OAuth2Auth:
 
     @property
     def redirect_uri(self) -> str:
-        return str(self.settings.get("redirect_uri", "http://127.0.0.1:8765/api/integrations/oauth/callback"))
+        return str(self.settings.get("redirect_uri") or self.default_redirect_uri)
 
     # --- flow -------------------------------------------------------
     def authorization_url(self, state: str, code_verifier: str | None = None) -> str:
@@ -198,6 +209,8 @@ class OAuth2Auth:
         if "access_token" not in response:
             raise OAuthError(f"token response has no access_token: {list(response)}")
         self._tokens = OAuthTokens.from_response(response)
+        register_secret(self._tokens.access_token)
+        register_secret(self._tokens.refresh_token)
         self.secret_store.set_secret(self.secret_name, self._tokens.to_json())
         return self._tokens
 
@@ -216,6 +229,7 @@ class OAuth2Auth:
         if "access_token" not in response:
             raise OAuthError("refresh failed")
         self._tokens = OAuthTokens.from_response(response, previous=self._tokens)
+        register_secret(self._tokens.access_token)
         self.secret_store.set_secret(self.secret_name, self._tokens.to_json())
         return self._tokens
 
@@ -283,21 +297,30 @@ class OAuthFlowManager:
 
 
 def build_auth(
-    config: ConnectionConfig, secret_store: SecretProvider, http_post: HttpPost | None = None
+    config: ConnectionConfig,
+    secret_store: SecretProvider,
+    http_post: HttpPost | None = None,
+    default_redirect_uri: str | None = None,
 ) -> AuthStrategy:
     auth_type = (config.auth_type or "none").lower()
     if auth_type == "none":
         return NoAuth()
     if auth_type == "api_token":
+        token = secret_store.get_secret(config.secret_name())
+        register_secret(token)
         return ApiTokenAuth(
-            secret_store.get_secret(config.secret_name()),
+            token,
             header_name=str(config.auth_config.get("header_name", "X-API-Key")),
             prefix=str(config.auth_config.get("prefix", "")),
         )
     if auth_type == "bearer":
-        return BearerAuth(secret_store.get_secret(config.secret_name()))
+        token = secret_store.get_secret(config.secret_name())
+        register_secret(token)
+        return BearerAuth(token)
     if auth_type == "oauth2":
-        return OAuth2Auth(config, secret_store, http_post=http_post)
+        return OAuth2Auth(
+            config, secret_store, http_post=http_post, default_redirect_uri=default_redirect_uri
+        )
     if auth_type == "custom":
         from app.integrations.mcp.adapters import get_adapter
 

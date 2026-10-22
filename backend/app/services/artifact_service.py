@@ -230,18 +230,25 @@ class ArtifactService:
         return self.set_status(artifact_id, ArtifactStatus.APPROVED, actor)
 
     def request_revision(self, artifact_id: str, instructions: str, actor: str = Actor.USER) -> TaskArtifact:
-        artifact = self.set_status(artifact_id, ArtifactStatus.REVISION_REQUESTED, actor)
-        from app.models import TaskContext
+        """Mark the artifact and hand the instructions to its tasks (SPEC 12.1 修正依頼).
 
+        Tasks waiting for the user's review go back to ``todo`` so the Manager replans them;
+        other linked tasks only receive the context.
+        """
+        from app.services.task_service import TaskService
+
+        artifact = self.set_status(artifact_id, ArtifactStatus.REVISION_REQUESTED, actor)
+        task_service = TaskService(self.session, self.broker)
+        message = f"成果物「{artifact.title}」への修正依頼: {instructions}"
         for tid in self.linked_task_ids(artifact):
-            self.session.add(
-                TaskContext(
-                    task_id=tid,
-                    context=f"成果物「{artifact.title}」への修正依頼: {instructions}",
-                    source="user_revision",
-                    status="open",
-                )
-            )
+            try:
+                task = task_service.get(tid)
+            except NotFoundError:
+                continue
+            if task.status == "review_pending":
+                task_service.request_revision(tid, message, kind="revision", actor=actor)
+            else:
+                task_service.add_context(tid, message, source="user_revision", actor=actor)
         self.session.flush()
         return artifact
 

@@ -28,5 +28,12 @@ if ($Foreground) {
 $log = Join-Path $DataDir "logs\start.log"
 Start-Process -FilePath "uv" -ArgumentList $args -WorkingDirectory $BackendDir -WindowStyle Hidden -RedirectStandardOutput $log -RedirectStandardError (Join-Path $DataDir "logs\start.err.log")
 Start-Sleep -Seconds 2
-if (Test-Path $PidFile) { Write-Log "Started (pid $(Get-Content $PidFile)). UI: http://127.0.0.1:$(Get-AppPort)" }
+if (Test-Path $PidFile) {
+  Write-Log "Started (pid $(Get-Content $PidFile))."
+  Push-Location $BackendDir
+  $url = (& uv run --quiet aiwm url 2>$null)
+  Pop-Location
+  if (-not $url) { $url = "http://127.0.0.1:$(Get-AppPort)" }
+  Write-Log "UI (open this URL once; it carries the session token): $url"
+}
 else { Write-Warn "Backend did not report a pid yet; check $log" }

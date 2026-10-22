@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     manager_reevaluation_interval_minutes: int = Field(default=30, ge=1)
     llm_timeout_seconds: int = Field(default=120, ge=1)
     llm_max_retries: int = Field(default=2, ge=0)
+    mcp_approval_wait_seconds: int = Field(default=300, ge=0)
+    api_session_token_required: bool = True
 
     # Testing / advanced
     aiwm_llm_provider_override: str | None = None
@@ -70,7 +72,7 @@ class Settings(BaseSettings):
 
     def resolved_data_dir(self) -> Path:
         if self.aiwm_data_dir:
-            return Path(self.aiwm_data_dir).expanduser()
+            return Path(os.path.expandvars(self.aiwm_data_dir)).expanduser()
         from app.platform import get_platform_adapter
 
         return get_platform_adapter().get_data_directory()

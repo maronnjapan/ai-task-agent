@@ -144,17 +144,9 @@ class MemoryService:
                 ids = []
         if not ids:
             # Fallback: substring search (handles very short CJK queries).
-            like = f"%{query.strip()}%"
-            stmt = select(Memory).where(Memory.content.like(like))
-            if scope:
-                stmt = stmt.where(Memory.scope == scope)
-            if task_id:
-                stmt = stmt.where(Memory.task_id == task_id)
-            if category_id:
-                stmt = stmt.where(Memory.category_id == category_id)
-            if kind:
-                stmt = stmt.where(Memory.kind == kind)
-            return list(self.session.execute(stmt.order_by(Memory.updated_at.desc()).limit(limit)).scalars())
+            return self.search_like(
+                query, scope=scope, task_id=task_id, category_id=category_id, kind=kind, limit=limit
+            )
         stmt = select(Memory).where(Memory.id.in_(ids))
         if scope:
             stmt = stmt.where(Memory.scope == scope)
@@ -165,9 +157,35 @@ class MemoryService:
         if kind:
             stmt = stmt.where(Memory.kind == kind)
         rows = list(self.session.execute(stmt).scalars())
+        if not rows:
+            # FTS matched only rows outside the requested scope: fall back to a filtered substring search.
+            return self.search_like(
+                query, scope=scope, task_id=task_id, category_id=category_id, kind=kind, limit=limit
+            )
         order = {mid: i for i, mid in enumerate(ids)}
         rows.sort(key=lambda m: order.get(m.id, 0))
         return rows[:limit]
+
+    def search_like(
+        self,
+        query: str,
+        scope: str | None = None,
+        task_id: str | None = None,
+        category_id: str | None = None,
+        kind: str | None = None,
+        limit: int = 20,
+    ) -> list[Memory]:
+        like = f"%{query.strip()}%"
+        stmt = select(Memory).where(Memory.content.like(like))
+        if scope:
+            stmt = stmt.where(Memory.scope == scope)
+        if task_id:
+            stmt = stmt.where(Memory.task_id == task_id)
+        if category_id:
+            stmt = stmt.where(Memory.category_id == category_id)
+        if kind:
+            stmt = stmt.where(Memory.kind == kind)
+        return list(self.session.execute(stmt.order_by(Memory.updated_at.desc()).limit(limit)).scalars())
 
     def relevant_for_task(self, task: Task, query: str | None = None, limit: int = 20) -> list[Memory]:
         """Global + category + task memories (SPEC 13.2 / 8.5)."""
@@ -176,17 +194,19 @@ class MemoryService:
             | ((Memory.scope == "category") & (Memory.category_id == task.category_id))
             | ((Memory.scope == "task") & (Memory.task_id == task.id))
         )
-        rows = list(self.session.execute(stmt.order_by(Memory.updated_at.desc()).limit(limit)).scalars())
-        if query:
-            found = self.search(query, limit=limit)
-            seen = {m.id for m in rows}
-            for m in found:
-                if m.id not in seen and (
-                    m.scope == "global"
-                    or (m.scope == "category" and m.category_id == task.category_id)
-                    or (m.scope == "task" and m.task_id == task.id)
-                ):
-                    rows.append(m)
+        recent = list(self.session.execute(stmt.order_by(Memory.updated_at.desc()).limit(limit)).scalars())
+        if not query:
+            return recent
+        # Query matches come first so they are never cut off by the recency window.
+        matched = [
+            m
+            for m in self.search(query, limit=limit)
+            if m.scope == "global"
+            or (m.scope == "category" and m.category_id == task.category_id)
+            or (m.scope == "task" and m.task_id == task.id)
+        ]
+        seen = {m.id for m in matched}
+        rows = matched + [m for m in recent if m.id not in seen]
         return rows[:limit]
 
     def global_memories(self, limit: int = 30) -> list[Memory]:

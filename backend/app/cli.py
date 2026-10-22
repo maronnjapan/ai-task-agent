@@ -27,10 +27,21 @@ def _which(binary: str) -> str | None:
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    from app.main import build_context, serve
+    from app.main import acquire_instance_lock, build_context, serve, session_url
 
+    lock = acquire_instance_lock()
     ctx = build_context(interactive=not args.no_prompt and sys.stdin.isatty())
-    serve(ctx, open_browser=args.open)
+    print(f"AI Work Manager UI: {session_url(ctx)}")
+    serve(ctx, open_browser=args.open, lock=lock)
+    return 0
+
+
+def cmd_url(args: argparse.Namespace) -> int:
+    """Print the tokenised URL that opens the UI with a valid session."""
+    from app.main import build_context, session_url
+
+    ctx = build_context(interactive=False)
+    print(session_url(ctx))
     return 0
 
 
@@ -82,9 +93,18 @@ def cmd_status(args: argparse.Namespace) -> int:
     from app.config import get_settings
 
     settings = get_settings()
-    url = f"http://{settings.app_host}:{settings.app_port}/api/system/status"
+    from app.api.session import HEADER_NAME, load_or_create_token
+    from app.infrastructure.paths import build_paths
+
+    host = "127.0.0.1" if settings.app_host in ("0.0.0.0", "::", "") else settings.app_host
+    url = f"http://{host}:{settings.app_port}/api/system/status"
+    request = urllib.request.Request(url)
+    if settings.api_session_token_required:
+        token_file = build_paths(settings.resolved_data_dir()).config / "session.token"
+        if token_file.exists():
+            request.add_header(HEADER_NAME, load_or_create_token(token_file))
     try:
-        with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310 - local URL
+        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310 - local URL
             data = json.loads(response.read())
     except Exception as exc:  # noqa: BLE001
         print(f"Backend not reachable at {url}: {exc}")
@@ -176,6 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--no-prompt", action="store_true", help="never prompt for API keys")
     start.set_defaults(func=cmd_start)
     sub.add_parser("setup", help="interactive first-time setup (API keys)").set_defaults(func=cmd_setup)
+    sub.add_parser("url", help="print the UI URL including the session token").set_defaults(func=cmd_url)
     sub.add_parser("stop", help="stop a running backend").set_defaults(func=cmd_stop)
     sub.add_parser("status", help="show backend status").set_defaults(func=cmd_status)
     backup = sub.add_parser("backup", help="create a backup archive")

@@ -24,7 +24,10 @@ def classify_tool(tool_name: str, description: str | None = None) -> str:
         return ToolPermission.EXTERNAL_WRITE
     if description and _EXTERNAL_WRITE.search(description) and not _READ.search(name):
         return ToolPermission.EXTERNAL_WRITE
-    return ToolPermission.READ
+    if description and _READ.search(description):
+        return ToolPermission.READ
+    # Unknown tools fail closed: they need user approval until the user classifies them (SPEC 17.14).
+    return ToolPermission.EXTERNAL_WRITE
 
 
 def requires_approval(permission: str) -> bool:

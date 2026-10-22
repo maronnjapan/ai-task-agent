@@ -39,6 +39,7 @@ class ExecutionPlan(Base):
 
 class RelatedPlanToTask(Base):
     __tablename__ = "related_plan_to_task"
+    __table_args__ = (Index("ix_related_plan_to_task_plan", "execution_plan_id"),)
 
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
     execution_plan_id: Mapped[str] = mapped_column(
@@ -79,6 +80,7 @@ class WorkItemDependency(Base):
     __tablename__ = "work_item_dependencies"
     __table_args__ = (
         CheckConstraint("work_item_id <> depends_on_work_item_id", name="ck_work_item_dependencies_self"),
+        Index("ix_work_item_dependencies_prereq", "depends_on_work_item_id"),
     )
 
     work_item_id: Mapped[str] = mapped_column(
@@ -98,6 +100,7 @@ class AgentRun(Base):
         ),
         Index("ix_agent_runs_plan", "execution_plan_id"),
         Index("ix_agent_runs_started", "started_at"),
+        Index("ix_agent_runs_work_item", "work_item_id"),
     )
 
     id: Mapped[str] = id_column()
@@ -144,6 +147,7 @@ class ReviewTaskResult(Base):
     __tablename__ = "review_task_results"
     __table_args__ = (
         CheckConstraint("status IN ('passed','failed','blocked')", name="ck_review_task_results_status"),
+        Index("ix_review_task_results_task", "task_id"),
     )
 
     review_id: Mapped[str] = mapped_column(ForeignKey("reviews.id", ondelete="CASCADE"), primary_key=True)

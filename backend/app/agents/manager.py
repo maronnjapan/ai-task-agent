@@ -76,7 +76,10 @@ class ManagerAgent(AgentRunnerBase):
                         "category_id": task.category_id,
                         "active_plan_id": extra["active_plan_id"],
                         "pending_artifacts": extra["pending_artifacts"],
-                        "open_user_contexts": [c.context for c in task_service.open_contexts(task.id)],
+                        "on_hold": task_service.is_on_hold(task.id),
+                        "open_user_contexts": [
+                            c.context for c in task_service.open_contexts(task.id) if c.source != "user_hold"
+                        ],
                         "decisions": [d.content for d in DecisionService(session).active(task.id)][:5],
                     }
                 )

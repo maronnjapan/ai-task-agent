@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { api, ApiError } from '../api/client';
   import type { TaskOut } from '../api/types';
-  import { onEvent } from '../stores/events.svelte';
+  import { debounced, onEvent } from '../stores/events.svelte';
   import StatusBadge from '../components/StatusBadge.svelte';
   import Loading from '../components/Loading.svelte';
   import TaskInfoTab from '../components/task/TaskInfoTab.svelte';
@@ -66,8 +66,10 @@
 
   onMount(() => {
     void load();
-    return onEvent(['task.updated', 'task.deleted', 'artifact.created', 'artifact.updated', 'plan.updated'], (event) => {
-      if ((event.data as { task_id?: string }).task_id === id) void load();
+    const reload = debounced(() => void load(), 250);
+    return onEvent(['task.updated', 'task.deleted', 'artifact.created', 'artifact.updated', 'plan.created', 'plan.updated'], (event) => {
+      const data = event.data as { task_id?: string; task_ids?: string[] };
+      if (data.task_id === id || (Array.isArray(data.task_ids) && data.task_ids.includes(id))) reload();
     });
   });
 </script>

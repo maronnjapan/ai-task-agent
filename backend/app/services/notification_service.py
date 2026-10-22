@@ -96,10 +96,13 @@ class NotificationService:
             self.broker.publish("notification.read", {"count": count})
         return count
 
-    def _suppressed(self, dedupe_key: str | None, level: str, source: str = "system") -> str | None:
+    def _suppressed(
+        self, dedupe_key: str | None, level: str, source: str = "system", dedupe_minutes: int | None = None
+    ) -> str | None:
         now = utcnow()
-        if dedupe_key and self.settings.dedupe_window_minutes > 0:
-            since = (now - timedelta(minutes=self.settings.dedupe_window_minutes)).isoformat()
+        window = self.settings.dedupe_window_minutes if dedupe_minutes is None else dedupe_minutes
+        if dedupe_key and window > 0:
+            since = (now - timedelta(minutes=window)).isoformat()
             dup = self.session.execute(
                 select(Notification.id)
                 .where(Notification.dedupe_key == dedupe_key, Notification.created_at >= since)
@@ -116,7 +119,11 @@ class NotificationService:
             since = (now - timedelta(seconds=self.settings.min_interval_seconds)).isoformat()
             recent = self.session.execute(
                 select(Notification.id)
-                .where(Notification.created_at >= since, Notification.source.notin_(list(RATE_LIMIT_EXEMPT)))
+                .where(
+                    Notification.created_at >= since,
+                    Notification.source.notin_(list(RATE_LIMIT_EXEMPT)),
+                    Notification.channel != "manager_message",  # Manager messages are not alerts
+                )
                 .limit(1)
             ).scalar_one_or_none()
             if recent:
@@ -133,9 +140,10 @@ class NotificationService:
         source: str = "system",
         channel: str = "in_app",
         force: bool = False,
+        dedupe_minutes: int | None = None,
     ) -> Notification | None:
         level = str(NotificationLevel(level))
-        reason = None if force else self._suppressed(dedupe_key, level, source)
+        reason = None if force else self._suppressed(dedupe_key, level, source, dedupe_minutes)
         if reason:
             log.debug("notification suppressed (%s): %s", reason, title)
             self.audit.record(
@@ -156,6 +164,7 @@ class NotificationService:
         self.audit.record(
             "notification.created", "notification", row.id, source, {"title": row.title, "level": level}
         )
+        quiet = self.in_quiet_hours()
         if self.broker:
             self.broker.publish(
                 "notification.created",
@@ -165,9 +174,11 @@ class NotificationService:
                     "body": row.body,
                     "level": level,
                     "task_id": task_id,
+                    "channel": row.channel,
+                    "quiet": quiet,
                 },
             )
-        if self._should_deliver_desktop(level):
+        if channel != "manager_message" and self._should_deliver_desktop(level, quiet):
             try:
                 delivered = self.platform.show_notification(row.title, row.body) if self.platform else False
             except Exception:  # pragma: no cover - platform specific
@@ -178,18 +189,18 @@ class NotificationService:
                 row.channel = "desktop"
         return row
 
-    def _should_deliver_desktop(self, level: str) -> bool:
+    def in_quiet_hours(self) -> bool:
+        local_now = datetime.now().astimezone()
+        return in_quiet_hours(local_now, self.settings.quiet_hours_start, self.settings.quiet_hours_end)
+
+    def _should_deliver_desktop(self, level: str, quiet: bool | None = None) -> bool:
         if not self.settings.desktop_enabled or self.platform is None:
             return False
         threshold = {"low": 2, "normal": 1, "high": 0}.get(self.settings.level, 1)
         if _LEVEL_RANK.get(level, 1) < threshold:
             return False
-        local_now = datetime.now().astimezone()
-        if (
-            in_quiet_hours(local_now, self.settings.quiet_hours_start, self.settings.quiet_hours_end)
-            and level != "high"
-        ):
-            return False
+        if quiet if quiet is not None else self.in_quiet_hours():
+            return False  # 通知停止時間帯: nothing reaches the desktop; the in-app history is still kept
         return True
 
     def recent_summary(self, hours: int = 24, limit: int = 10) -> list[dict]:
