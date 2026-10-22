@@ -30,7 +30,10 @@
 
   let task: TaskOut | null = $state(null);
   let notFound = $state(false);
-  let tab: Tab = $state((tabs.some((t) => t.id === query.tab) ? (query.tab as Tab) : 'info'));
+  // Only the initial ?tab= value is needed; later changes go through selectTab().
+  // svelte-ignore state_referenced_locally
+  const initialTab = tabs.some((t) => t.id === query.tab) ? (query.tab as Tab) : 'info';
+  let tab = $state<Tab>(initialTab);
 
   async function load() {
     try {
@@ -92,9 +95,9 @@
       </div>
     </header>
 
-    <div class="tabs" role="tablist" aria-label="タスク詳細" onkeydown={onTabKey}>
+    <div class="tabs" role="tablist" aria-label="タスク詳細">
       {#each tabs as t (t.id)}
-        <button type="button" role="tab" id="tab-{t.id}" aria-selected={tab === t.id} aria-controls="panel-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => selectTab(t.id)}>
+        <button type="button" role="tab" id="tab-{t.id}" aria-selected={tab === t.id} aria-controls="panel-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => selectTab(t.id)} onkeydown={onTabKey}>
           {t.label}
           {#if t.id === 'artifacts' && task.pending_artifacts}<span class="count">{task.pending_artifacts}</span>{/if}
           {#if t.id === 'chat' && task.open_chats}<span class="count">{task.open_chats}</span>{/if}

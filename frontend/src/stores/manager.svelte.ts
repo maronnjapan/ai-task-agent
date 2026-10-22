@@ -21,12 +21,16 @@ export async function loadManagerStatus(): Promise<void> {
 export const isPaused = () => manager.status?.state === 'paused';
 export const isRunning = () => manager.status?.state === 'running';
 
+// Errors below are already reported through the global error banner by the API client.
+
 export async function runManagerNow(): Promise<void> {
   manager.busy = true;
   try {
     const result = await api.manager.run();
     toast.success('Manager AI を起動しました', result.message || undefined);
     await loadManagerStatus();
+  } catch {
+    // banner
   } finally {
     manager.busy = false;
   }
@@ -37,6 +41,8 @@ export async function pauseManager(): Promise<void> {
   try {
     manager.status = await api.manager.pause();
     toast.info('Manager AI を一時停止しました');
+  } catch {
+    // banner
   } finally {
     manager.busy = false;
   }
@@ -47,6 +53,8 @@ export async function resumeManager(): Promise<void> {
   try {
     manager.status = await api.manager.resume();
     toast.success('Manager AI を再開しました');
+  } catch {
+    // banner
   } finally {
     manager.busy = false;
   }

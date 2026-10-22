@@ -34,10 +34,12 @@
     resetForm(task);
   });
 
+  // Compare the due date at minute precision: that is all <input type="datetime-local"> can express.
+  const dueChanged = $derived(form.due !== toDateTimeLocal(task.due_at));
   const dirty = $derived(
     form.title !== task.title ||
       form.description !== (task.description ?? '') ||
-      fromDateTimeLocal(form.due) !== (task.due_at ? new Date(task.due_at).toISOString() : null) ||
+      dueChanged ||
       form.category_id !== (task.category_id ?? '') ||
       form.status !== task.status ||
       form.assignee !== task.assignee
@@ -52,8 +54,8 @@
       if (form.description.trim() === '') clear.push('description');
       else body.description = form.description;
     }
-    const due = fromDateTimeLocal(form.due);
-    if (due !== (task.due_at ? new Date(task.due_at).toISOString() : null)) {
+    if (dueChanged) {
+      const due = fromDateTimeLocal(form.due);
       if (due === null) clear.push('due_at');
       else body.due_at = due;
     }

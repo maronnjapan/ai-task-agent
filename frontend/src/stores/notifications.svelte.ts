@@ -28,17 +28,25 @@ export async function loadNotifications(unreadOnly = true, limit = 30): Promise<
 }
 
 export async function markAllRead(): Promise<void> {
-  await api.notifications.markRead(null);
-  notifications.unread = 0;
-  notifications.items = notifications.items.map((n) => ({ ...n, status: 'read' }));
+  try {
+    await api.notifications.markRead(null);
+    notifications.unread = 0;
+    notifications.items = notifications.items.map((n) => ({ ...n, status: 'read' }));
+  } catch {
+    // reported by the global error banner
+  }
 }
 
 export async function markRead(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
-  await api.notifications.markRead(ids);
-  const set = new Set(ids);
-  notifications.items = notifications.items.map((n) => (set.has(n.id) ? { ...n, status: 'read' } : n));
-  notifications.unread = Math.max(0, notifications.unread - ids.length);
+  try {
+    await api.notifications.markRead(ids);
+    const set = new Set(ids);
+    notifications.items = notifications.items.map((n) => (set.has(n.id) ? { ...n, status: 'read' } : n));
+    notifications.unread = Math.max(0, notifications.unread - ids.length);
+  } catch {
+    // reported by the global error banner
+  }
 }
 
 let bound = false;

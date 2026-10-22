@@ -241,7 +241,7 @@
   <section class="card" aria-labelledby="plans-title">
     <div class="card-title">
       <h2 id="plans-title">実行計画 <span class="muted small">({plans.length})</span></h2>
-      <select aria-label="状態で絞り込み" bind:value={planStatus} onchange={() => void loadPlans()} style="width:auto">
+      <select aria-label="状態で絞り込み" bind:value={planStatus} onchange={() => queueMicrotask(() => void loadPlans())} style="width:auto">
         <option value="">すべて</option>
         {#each planStatuses as s (s)}<option value={s}>{label({ planned: '計画済み', running: '実行中', reviewing: 'レビュー中', review_pending: '確認待ち', completed: '完了', failed: '失敗', cancelled: 'キャンセル' }, s)}</option>{/each}
       </select>
@@ -275,7 +275,7 @@
   <section class="card" aria-labelledby="runs-title">
     <div class="card-title">
       <h2 id="runs-title">Agent Run</h2>
-      <select aria-label="種別で絞り込み" bind:value={runType} onchange={() => void loadRuns()} style="width:auto">
+      <select aria-label="種別で絞り込み" bind:value={runType} onchange={() => queueMicrotask(() => void loadRuns())} style="width:auto">
         <option value="">すべて</option>
         <option value="manager">Manager</option>
         <option value="worker">Worker</option>

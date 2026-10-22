@@ -83,7 +83,8 @@
     searchTimer = setTimeout(() => void loadTasks(0), 300);
   }
   function applyFilters() {
-    void loadTasks(0);
+    // Defer one microtask so the bind: update from the same change event is applied first.
+    queueMicrotask(() => void loadTasks(0));
   }
   function resetFilters() {
     tasks.filters.status = '';

@@ -22,7 +22,7 @@
   let contentVersion = $state(0);
   let notFound = $state(false);
   let loadingContent = $state(true);
-  let mode: Mode = $state('preview');
+  let mode = $state<Mode>('preview');
   let draft = $state('');
   let changeNote = $state('');
   let saving = $state(false);

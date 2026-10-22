@@ -71,7 +71,7 @@
   <section class="card" aria-labelledby="dec-title">
     <div class="card-title">
       <h3 id="dec-title">決定事項</h3>
-      <label class="field field-inline small"><input type="checkbox" bind:checked={includeHistory} onchange={() => void load()} /><span>履歴も表示</span></label>
+      <label class="field field-inline small"><input type="checkbox" bind:checked={includeHistory} onchange={() => queueMicrotask(() => void load())} /><span>履歴も表示</span></label>
     </div>
     {#if loading}
       <Loading />

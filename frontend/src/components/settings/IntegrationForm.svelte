@@ -88,7 +88,7 @@
     form.tool_permissions = (preset.tool_permissions ?? []).map((p: ToolPermissionIn) => ({ tool_name: p.tool_name, permission: p.permission ?? 'read', enabled: p.enabled ?? true }));
     envHints = preset.env_hints ?? {};
     if (!form.name) form.name = preset.label;
-    if (Object.keys(envHints).length > 0 && !form.env) form.env = Object.entries(envHints).map(([k, v]) => `${k}=${v.includes(' ') ? '' : ''}`.replace(/=$/, `=`) + '').join('\n');
+    if (Object.keys(envHints).length > 0 && !form.env) form.env = Object.keys(envHints).map((k) => `${k}=`).join('\n');
   }
 
   function addPermission() {
