@@ -26,7 +26,9 @@ class ConnectionConfig:
     timeout_seconds: int = 30
     enabled: bool = True
     allowed_tools: list[str] = field(default_factory=list)
-    tool_permissions: dict[str, tuple[str, bool]] = field(default_factory=dict)  # name -> (permission, enabled)
+    tool_permissions: dict[str, tuple[str, bool]] = field(
+        default_factory=dict
+    )  # name -> (permission, enabled)
 
     @classmethod
     def from_model(cls, row: MCPConnection) -> ConnectionConfig:

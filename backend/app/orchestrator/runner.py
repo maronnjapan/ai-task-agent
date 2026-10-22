@@ -30,8 +30,27 @@ from app.utils import iso_in, now_iso, parse_iso, to_iso, utcnow
 
 log = logging.getLogger(__name__)
 
-MANAGER_TRIGGERS = {"app_started", "task_created", "task_updated", "schedule_due", "user_approved", "manual_run", "reevaluate", "approval_resolved", "work_item_completed", "review_completed"}
-EXTERNAL_TRIGGERS = {"task_created", "task_updated", "user_approved", "manual_run", "approval_resolved", "user_instruction", "app_started"}
+MANAGER_TRIGGERS = {
+    "app_started",
+    "task_created",
+    "task_updated",
+    "schedule_due",
+    "user_approved",
+    "manual_run",
+    "reevaluate",
+    "approval_resolved",
+    "work_item_completed",
+    "review_completed",
+}
+EXTERNAL_TRIGGERS = {
+    "task_created",
+    "task_updated",
+    "user_approved",
+    "manual_run",
+    "approval_resolved",
+    "user_instruction",
+    "app_started",
+}
 
 AGENT_TIMEOUT_SECONDS = {"manager": 900, "worker": 1800, "review": 900}
 
@@ -125,7 +144,13 @@ class Orchestrator:
 
             from app.models import Task
 
-            pending_reviews = int(session.execute(select(func.count(Task.id)).where(Task.status == "review_pending", Task.is_deleted.is_(False))).scalar_one())
+            pending_reviews = int(
+                session.execute(
+                    select(func.count(Task.id)).where(
+                        Task.status == "review_pending", Task.is_deleted.is_(False)
+                    )
+                ).scalar_one()
+            )
             active_plans = len(exec_service.active_plans())
             next_due = SchedulerService(session).next_due_at()
             llm = SettingsService(session, self.app.settings).get_llm()
@@ -158,22 +183,44 @@ class Orchestrator:
             self._set_state("running", "指示を処理中")
             with self.app.db.session() as session:
                 exec_service = ExecutionService(session)
-                run = exec_service.start_run("manager", model=self._model_name("manager"), trigger="user_instruction", input_summary=instruction[:500])
+                run = exec_service.start_run(
+                    "manager",
+                    model=self._model_name("manager"),
+                    trigger="user_instruction",
+                    input_summary=instruction[:500],
+                )
                 run_id = run.id
             self.status.current_run_id = run_id
             try:
-                text = instruction if not task_ids else instruction + "\n\n対象タスクID: " + ", ".join(task_ids)
-                result = await asyncio.wait_for(self.manager.run(mode="instruction", trigger="user_instruction", instruction=text, run_id=run_id), timeout=AGENT_TIMEOUT_SECONDS["manager"])
+                text = (
+                    instruction if not task_ids else instruction + "\n\n対象タスクID: " + ", ".join(task_ids)
+                )
+                result = await asyncio.wait_for(
+                    self.manager.run(
+                        mode="instruction", trigger="user_instruction", instruction=text, run_id=run_id
+                    ),
+                    timeout=AGENT_TIMEOUT_SECONDS["manager"],
+                )
                 with self.app.db.session() as session:
-                    ExecutionService(session, self.app.broker).finish_run(run_id, "succeeded", result_summary=summarize_result(result))
-                    AuditService(session).record("manager.instruction", "agent_run", run_id, "user", {"instruction": instruction[:2000], "response": result.text[:4000]})
+                    ExecutionService(session, self.app.broker).finish_run(
+                        run_id, "succeeded", result_summary=summarize_result(result)
+                    )
+                    AuditService(session).record(
+                        "manager.instruction",
+                        "agent_run",
+                        run_id,
+                        "user",
+                        {"instruction": instruction[:2000], "response": result.text[:4000]},
+                    )
                 if result.plan_ids:
                     self.queue.push("reevaluate", {"reason": "instruction_created_plans"})
                 self.status.consecutive_no_progress = 0
                 return result
             except Exception as exc:  # noqa: BLE001
                 with self.app.db.session() as session:
-                    ExecutionService(session, self.app.broker).finish_run(run_id, "failed", error_message=str(exc)[:2000])
+                    ExecutionService(session, self.app.broker).finish_run(
+                        run_id, "failed", error_message=str(exc)[:2000]
+                    )
                 raise
             finally:
                 self.status.current_run_id = None
@@ -218,9 +265,24 @@ class Orchestrator:
             for action in scheduler.due():
                 scheduler.mark(action, "running")
                 payload = scheduler.payload_of(action)
-                self.queue.push("schedule_due", {"action_type": action.action_type, "action_id": action.id, "task_id": action.task_id, "payload": payload}, session=session)
+                self.queue.push(
+                    "schedule_due",
+                    {
+                        "action_type": action.action_type,
+                        "action_id": action.id,
+                        "task_id": action.task_id,
+                        "payload": payload,
+                    },
+                    session=session,
+                )
                 scheduler.mark(action, "done")
-                AuditService(session).record("schedule.fired", "scheduled_action", action.id, "system", {"action_type": action.action_type})
+                AuditService(session).record(
+                    "schedule.fired",
+                    "scheduled_action",
+                    action.id,
+                    "system",
+                    {"action_type": action.action_type},
+                )
 
     async def run_cycle(self, triggers: list[Trigger]) -> None:
         async with self._cycle_lock:
@@ -237,8 +299,16 @@ class Orchestrator:
                     return
                 progress = await self._execute_active_plans()
                 if trigger_types & MANAGER_TRIGGERS:
-                    if "reevaluate" in trigger_types and not external and self.status.consecutive_no_progress >= self._limits()["max_consecutive_no_progress"]:
-                        log.info("skipping reevaluation: no progress for %s cycles", self.status.consecutive_no_progress)
+                    if (
+                        "reevaluate" in trigger_types
+                        and not external
+                        and self.status.consecutive_no_progress
+                        >= self._limits()["max_consecutive_no_progress"]
+                    ):
+                        log.info(
+                            "skipping reevaluation: no progress for %s cycles",
+                            self.status.consecutive_no_progress,
+                        )
                     else:
                         result = await self._run_manager(trigger=",".join(sorted(trigger_types)))
                         if result is not None:
@@ -254,8 +324,19 @@ class Orchestrator:
                 log.exception("cycle failed")
                 self.status.last_result = f"error: {exc}"
                 with self.app.db.session() as session:
-                    AuditService(session).record("orchestrator.error", "system", None, "system", {"error": str(exc)[:2000], "trace": traceback.format_exc()[-4000:]})
-                    SchedulerService(session).schedule("retry_after_error", iso_in(minutes=5), payload={"error": str(exc)[:500]}, replace=True)
+                    AuditService(session).record(
+                        "orchestrator.error",
+                        "system",
+                        None,
+                        "system",
+                        {"error": str(exc)[:2000], "trace": traceback.format_exc()[-4000:]},
+                    )
+                    SchedulerService(session).schedule(
+                        "retry_after_error",
+                        iso_in(minutes=5),
+                        payload={"error": str(exc)[:500]},
+                        replace=True,
+                    )
             finally:
                 self._ensure_reevaluation_scheduled()
                 self.status.last_run_at = now_iso()
@@ -276,7 +357,11 @@ class Orchestrator:
         with self.app.db.session() as session:
             llm = SettingsService(session, self.app.settings).get_llm()
         cfg = getattr(llm, agent)
-        provider = self.app.llm_factory.provider_override if self.app.llm_factory and self.app.llm_factory.provider_override else cfg.provider
+        provider = (
+            self.app.llm_factory.provider_override
+            if self.app.llm_factory and self.app.llm_factory.provider_override
+            else cfg.provider
+        )
         return f"{provider}:{cfg.model}"
 
     def _llm_ready(self) -> bool:
@@ -292,15 +377,30 @@ class Orchestrator:
                 issue = f"{provider} の API キーが設定されていないため AI 実行を見送りました"
                 if self.status.llm_issue != issue:
                     self.status.llm_issue = issue
-                    self._notify("API キーが未設定です", issue + "。設定画面から登録してください。", level="high", dedupe_key="system:llm_missing")
+                    self._notify(
+                        "API キーが未設定です",
+                        issue + "。設定画面から登録してください。",
+                        level="high",
+                        dedupe_key="system:llm_missing",
+                    )
                 return False
         self.status.llm_issue = None
         return True
 
-    def _notify(self, title: str, body: str = "", level: str = "normal", task_id: str | None = None, dedupe_key: str | None = None, source: str = "orchestrator") -> None:
+    def _notify(
+        self,
+        title: str,
+        body: str = "",
+        level: str = "normal",
+        task_id: str | None = None,
+        dedupe_key: str | None = None,
+        source: str = "orchestrator",
+    ) -> None:
         with self.app.db.session() as session:
             settings = SettingsService(session, self.app.settings).get_notifications()
-            NotificationService(session, settings, self.app.platform, self.app.broker).create(title, body, level=level, task_id=task_id, dedupe_key=dedupe_key, source=source)
+            NotificationService(session, settings, self.app.platform, self.app.broker).create(
+                title, body, level=level, task_id=task_id, dedupe_key=dedupe_key, source=source
+            )
 
     def _set_state(self, state: str, activity: str | None) -> None:
         self.status.state = state
@@ -309,7 +409,14 @@ class Orchestrator:
 
     def _publish_status(self) -> None:
         try:
-            self.app.broker.publish("manager.status", {"state": "paused" if self._paused else self.status.state, "activity": self.status.activity, "run_id": self.status.current_run_id})
+            self.app.broker.publish(
+                "manager.status",
+                {
+                    "state": "paused" if self._paused else self.status.state,
+                    "activity": self.status.activity,
+                    "run_id": self.status.current_run_id,
+                },
+            )
         except Exception:  # noqa: BLE001
             pass
 
@@ -318,7 +425,11 @@ class Orchestrator:
         with self.app.db.session() as session:
             scheduler = SchedulerService(session)
             if not scheduler.pending(action_type="manager_reevaluate"):
-                scheduler.schedule("manager_reevaluate", iso_in(minutes=limits["reevaluation_interval_minutes"]), payload={"by": "orchestrator"})
+                scheduler.schedule(
+                    "manager_reevaluate",
+                    iso_in(minutes=limits["reevaluation_interval_minutes"]),
+                    payload={"by": "orchestrator"},
+                )
 
     # ------------------------------------------------------------------ built-in (non-LLM) proactive checks
     def _run_builtin_checks(self, triggers: list[Trigger]) -> None:
@@ -342,19 +453,45 @@ class Orchestrator:
                         title, body, level = "期限超過", f"「{task.title}」の期限を過ぎています。", "high"
                     else:
                         hours = int(remaining.total_seconds() // 3600)
-                        title, body, level = "期限が近づいています", f"「{task.title}」の期限まであと約{hours}時間です。", "normal"
-                    notifier.create(title, body, level=level, task_id=task.id, dedupe_key=f"due:{task.id}:{today}", source="scheduler")
+                        title, body, level = (
+                            "期限が近づいています",
+                            f"「{task.title}」の期限まであと約{hours}時間です。",
+                            "normal",
+                        )
+                    notifier.create(
+                        title,
+                        body,
+                        level=level,
+                        task_id=task.id,
+                        dedupe_key=f"due:{task.id}:{today}",
+                        source="scheduler",
+                    )
             if notif_settings.pending_review_reminder_hours > 0:
                 for task in tasks:
                     if task.status != TaskStatus.REVIEW_PENDING:
                         continue
                     updated = parse_iso(task.updated_at)
-                    if updated and now - updated >= timedelta(hours=notif_settings.pending_review_reminder_hours):
-                        notifier.create("確認待ちの成果物があります", f"「{task.title}」の成果物が確認待ちです。", level="low", task_id=task.id, dedupe_key=f"review_reminder:{task.id}:{today}", source="scheduler")
+                    if updated and now - updated >= timedelta(
+                        hours=notif_settings.pending_review_reminder_hours
+                    ):
+                        notifier.create(
+                            "確認待ちの成果物があります",
+                            f"「{task.title}」の成果物が確認待ちです。",
+                            level="low",
+                            task_id=task.id,
+                            dedupe_key=f"review_reminder:{task.id}:{today}",
+                            source="scheduler",
+                        )
             for trigger in triggers:
                 if trigger.type == "schedule_due" and trigger.payload.get("action_type") == "notify":
                     payload = trigger.payload.get("payload") or {}
-                    notifier.create(payload.get("title") or "リマインダー", payload.get("note") or payload.get("body") or "", level=payload.get("level", "normal"), task_id=trigger.payload.get("task_id"), source="scheduler")
+                    notifier.create(
+                        payload.get("title") or "リマインダー",
+                        payload.get("note") or payload.get("body") or "",
+                        level=payload.get("level", "normal"),
+                        task_id=trigger.payload.get("task_id"),
+                        source="scheduler",
+                    )
                 if trigger.type == "schedule_due" and trigger.payload.get("action_type") == "auto_backup":
                     self._auto_backup(session)
             backup = settings_service.get_backup()
@@ -378,29 +515,48 @@ class Orchestrator:
             AuditService(session).record("backup.failed", "system", None, "system", {"error": str(exc)})
 
     # ------------------------------------------------------------------ manager
-    async def _run_manager(self, trigger: str, mode: str = "evaluate", replan_plan_id: str | None = None) -> ManagerResult | None:
+    async def _run_manager(
+        self, trigger: str, mode: str = "evaluate", replan_plan_id: str | None = None
+    ) -> ManagerResult | None:
         self._set_state("running", "計画を検討中" if mode == "evaluate" else "再計画中")
         with self.app.db.session() as session:
-            run = ExecutionService(session, self.app.broker).start_run("manager", execution_plan_id=replan_plan_id, model=self._model_name("manager"), trigger=trigger, input_summary=f"mode={mode}")
+            run = ExecutionService(session, self.app.broker).start_run(
+                "manager",
+                execution_plan_id=replan_plan_id,
+                model=self._model_name("manager"),
+                trigger=trigger,
+                input_summary=f"mode={mode}",
+            )
             run_id = run.id
         self.status.current_run_id = run_id
         try:
-            result = await asyncio.wait_for(self.manager.run(mode=mode, trigger=trigger, replan_plan_id=replan_plan_id, run_id=run_id), timeout=AGENT_TIMEOUT_SECONDS["manager"])
+            result = await asyncio.wait_for(
+                self.manager.run(mode=mode, trigger=trigger, replan_plan_id=replan_plan_id, run_id=run_id),
+                timeout=AGENT_TIMEOUT_SECONDS["manager"],
+            )
             with self.app.db.session() as session:
-                ExecutionService(session, self.app.broker).finish_run(run_id, "succeeded", result_summary=summarize_result(result))
+                ExecutionService(session, self.app.broker).finish_run(
+                    run_id, "succeeded", result_summary=summarize_result(result)
+                )
             self.status.last_result = summarize_result(result)
             return result
         except LLMNotConfiguredError as exc:
             self.status.llm_issue = str(exc)
             with self.app.db.session() as session:
-                ExecutionService(session, self.app.broker).finish_run(run_id, "failed", error_message=str(exc))
+                ExecutionService(session, self.app.broker).finish_run(
+                    run_id, "failed", error_message=str(exc)
+                )
             return None
         except Exception as exc:  # noqa: BLE001
             log.exception("manager run failed")
             with self.app.db.session() as session:
-                ExecutionService(session, self.app.broker).finish_run(run_id, "failed", error_message=str(exc)[:2000])
+                ExecutionService(session, self.app.broker).finish_run(
+                    run_id, "failed", error_message=str(exc)[:2000]
+                )
             self.status.last_result = f"manager error: {exc}"
-            self._notify("Manager AI の実行に失敗しました", str(exc)[:300], level="normal", dedupe_key="manager:error")
+            self._notify(
+                "Manager AI の実行に失敗しました", str(exc)[:300], level="normal", dedupe_key="manager:error"
+            )
             return None
         finally:
             self.status.current_run_id = None
@@ -412,7 +568,11 @@ class Orchestrator:
         while guard < 20:
             guard += 1
             with self.app.db.session() as session:
-                plans = [p.id for p in ExecutionService(session).active_plans() if p.status in (PlanStatus.PLANNED, PlanStatus.RUNNING)]
+                plans = [
+                    p.id
+                    for p in ExecutionService(session).active_plans()
+                    if p.status in (PlanStatus.PLANNED, PlanStatus.RUNNING)
+                ]
             if not plans:
                 break
             for plan_id in plans:
@@ -436,7 +596,9 @@ class Orchestrator:
             for task_id in exec_service.plan_task_ids(plan.id):
                 task = task_service.get(task_id)
                 if task.status in (TaskStatus.TODO, TaskStatus.BLOCKED):
-                    task_service.set_status(task_id, TaskStatus.IN_PROGRESS, actor="ai", summary="AI が作業を開始")
+                    task_service.set_status(
+                        task_id, TaskStatus.IN_PROGRESS, actor="ai", summary="AI が作業を開始"
+                    )
             items = exec_service.list_work_items(plan.id)
         if not items:
             self._finish_plan_without_items(plan_id)
@@ -463,25 +625,56 @@ class Orchestrator:
             exec_service = ExecutionService(session, self.app.broker)
             item = exec_service.set_work_item_status(work_item_id, WorkItemStatus.RUNNING)
             title = item.title
-            run = exec_service.start_run("worker", execution_plan_id=plan_id, work_item_id=work_item_id, model=self._model_name("worker"), trigger="plan_execution", input_summary=item.description[:500])
+            run = exec_service.start_run(
+                "worker",
+                execution_plan_id=plan_id,
+                work_item_id=work_item_id,
+                model=self._model_name("worker"),
+                trigger="plan_execution",
+                input_summary=item.description[:500],
+            )
             run_id = run.id
         self.status.current_run_id = run_id
         self._set_state("running", f"作業中: {title}")
         try:
-            result: WorkerResult = await asyncio.wait_for(self.worker.run(plan_id, work_item_id, run_id=run_id), timeout=AGENT_TIMEOUT_SECONDS["worker"])
+            result: WorkerResult = await asyncio.wait_for(
+                self.worker.run(plan_id, work_item_id, run_id=run_id), timeout=AGENT_TIMEOUT_SECONDS["worker"]
+            )
             with self.app.db.session() as session:
                 exec_service = ExecutionService(session, self.app.broker)
                 exec_service.set_work_item_status(work_item_id, result.status, result.to_dict(work_item_id))
-                exec_service.finish_run(run_id, "succeeded" if result.status != "failed" else "failed", result_summary=result.summary[:2000], error_message=None if result.status != "failed" else result.summary[:2000])
+                exec_service.finish_run(
+                    run_id,
+                    "succeeded" if result.status != "failed" else "failed",
+                    result_summary=result.summary[:2000],
+                    error_message=None if result.status != "failed" else result.summary[:2000],
+                )
                 if result.status == "failed":
                     self._maybe_retry(session, work_item_id, max_retries, result.summary)
-                AuditService(session).record("work_item.completed", "work_item", work_item_id, "ai", {"status": result.status, "artifacts": result.artifact_ids})
+                AuditService(session).record(
+                    "work_item.completed",
+                    "work_item",
+                    work_item_id,
+                    "ai",
+                    {"status": result.status, "artifacts": result.artifact_ids},
+                )
         except Exception as exc:  # noqa: BLE001
             log.exception("worker run failed")
             with self.app.db.session() as session:
                 exec_service = ExecutionService(session, self.app.broker)
                 exec_service.finish_run(run_id, "failed", error_message=str(exc)[:2000])
-                exec_service.set_work_item_status(work_item_id, WorkItemStatus.FAILED, {"work_item_id": work_item_id, "status": "failed", "summary": f"error: {exc}"[:1000], "artifact_ids": [], "sources": [], "blockers": ["exception"]})
+                exec_service.set_work_item_status(
+                    work_item_id,
+                    WorkItemStatus.FAILED,
+                    {
+                        "work_item_id": work_item_id,
+                        "status": "failed",
+                        "summary": f"error: {exc}"[:1000],
+                        "artifact_ids": [],
+                        "sources": [],
+                        "blockers": ["exception"],
+                    },
+                )
                 self._maybe_retry(session, work_item_id, max_retries, str(exc))
         finally:
             self.status.current_run_id = None
@@ -494,16 +687,30 @@ class Orchestrator:
             item.status = WorkItemStatus.PENDING
             item.updated_at = now_iso()
             session.flush()
-            AuditService(session).record("work_item.retry", "work_item", work_item_id, "system", {"attempt": item.retry_count, "reason": reason[:500]})
+            AuditService(session).record(
+                "work_item.retry",
+                "work_item",
+                work_item_id,
+                "system",
+                {"attempt": item.retry_count, "reason": reason[:500]},
+            )
         else:
-            AuditService(session).record("work_item.retry_exhausted", "work_item", work_item_id, "system", {"attempts": item.retry_count})
+            AuditService(session).record(
+                "work_item.retry_exhausted",
+                "work_item",
+                work_item_id,
+                "system",
+                {"attempts": item.retry_count},
+            )
 
     def _finish_plan_without_items(self, plan_id: str) -> None:
         with self.app.db.session() as session:
             exec_service = ExecutionService(session, self.app.broker)
             exec_service.set_plan_status(plan_id, PlanStatus.FAILED)
             for task_id in exec_service.plan_task_ids(plan_id):
-                TaskService(session, self.app.broker).set_status(task_id, TaskStatus.TODO, actor="system", summary="計画に作業がなかったため差し戻し")
+                TaskService(session, self.app.broker).set_status(
+                    task_id, TaskStatus.TODO, actor="system", summary="計画に作業がなかったため差し戻し"
+                )
             AuditService(session).record("plan.empty", "execution_plan", plan_id, "system")
 
     async def _review_plan(self, plan_id: str, limits: dict[str, int]) -> None:
@@ -514,26 +721,49 @@ class Orchestrator:
             task_ids = exec_service.plan_task_ids(plan_id)
             succeeded = [i for i in items if i.status == WorkItemStatus.SUCCEEDED]
             blocked = [i for i in items if i.status == WorkItemStatus.BLOCKED]
-            run = exec_service.start_run("review", execution_plan_id=plan_id, model=self._model_name("review"), trigger="plan_execution")
+            run = exec_service.start_run(
+                "review",
+                execution_plan_id=plan_id,
+                model=self._model_name("review"),
+                trigger="plan_execution",
+            )
             run_id = run.id
         self.status.current_run_id = run_id
         self._set_state("running", "レビュー中")
         try:
             if succeeded:
-                result: ReviewResult = await asyncio.wait_for(self.reviewer.run(plan_id, run_id=run_id), timeout=AGENT_TIMEOUT_SECONDS["review"])
+                result: ReviewResult = await asyncio.wait_for(
+                    self.reviewer.run(plan_id, run_id=run_id), timeout=AGENT_TIMEOUT_SECONDS["review"]
+                )
             else:
-                status = "blocked" if blocked and not any(i.status == WorkItemStatus.FAILED for i in items) else "failed"
+                status = (
+                    "blocked"
+                    if blocked and not any(i.status == WorkItemStatus.FAILED for i in items)
+                    else "failed"
+                )
                 from app.utils import loads
 
-                summaries = [f"- {i.title}: {(loads(i.result, {}) or {}).get('summary', i.status)}" for i in items]
-                result = ReviewResult(status=status, feedback="作業が完了しなかったため不合格です。\n" + "\n".join(summaries), task_results=[{"task_id": t, "status": status, "feedback": None} for t in task_ids])
+                summaries = [
+                    f"- {i.title}: {(loads(i.result, {}) or {}).get('summary', i.status)}" for i in items
+                ]
+                result = ReviewResult(
+                    status=status,
+                    feedback="作業が完了しなかったため不合格です。\n" + "\n".join(summaries),
+                    task_results=[{"task_id": t, "status": status, "feedback": None} for t in task_ids],
+                )
         except Exception as exc:  # noqa: BLE001
             log.exception("review failed")
-            result = ReviewResult(status="failed", feedback=f"Review AI の実行に失敗しました: {exc}"[:1000], task_results=[])
+            result = ReviewResult(
+                status="failed", feedback=f"Review AI の実行に失敗しました: {exc}"[:1000], task_results=[]
+            )
         with self.app.db.session() as session:
             exec_service = ExecutionService(session, self.app.broker)
-            review = exec_service.record_review(plan_id, run_id, result.status, result.feedback, result.task_results)
-            exec_service.finish_run(run_id, "succeeded", result_summary=f"{result.status}: {result.feedback[:500]}")
+            review = exec_service.record_review(
+                plan_id, run_id, result.status, result.feedback, result.task_results
+            )
+            exec_service.finish_run(
+                run_id, "succeeded", result_summary=f"{result.status}: {result.feedback[:500]}"
+            )
             review_id = review.id
         self.status.current_run_id = None
         await self._apply_review(plan_id, review_id, limits)
@@ -551,13 +781,25 @@ class Orchestrator:
             blocked = [t for t, r in results.items() if r.status == "blocked"]
             titles = {t: task_service.get(t).title for t in results}
             for task_id in passed:
-                task_service.set_status(task_id, TaskStatus.REVIEW_PENDING, actor="ai", summary="Review AI 合格: ユーザー確認待ち")
+                task_service.set_status(
+                    task_id, TaskStatus.REVIEW_PENDING, actor="ai", summary="Review AI 合格: ユーザー確認待ち"
+                )
                 for artifact in artifact_service.list_for_task(task_id):
-                    if artifact.execution_plan_id in {p.id for p in exec_service.plan_chain(plan_id)} and artifact.status == "draft":
+                    if (
+                        artifact.execution_plan_id in {p.id for p in exec_service.plan_chain(plan_id)}
+                        and artifact.status == "draft"
+                    ):
                         artifact_service.set_status(artifact.id, "review_pending", actor="ai")
             for task_id in blocked:
-                task_service.set_status(task_id, TaskStatus.BLOCKED, actor="ai", summary="Review AI: 追加情報が必要")
-                task_service.add_context(task_id, f"Review AI からの確認事項: {results[task_id].feedback or review.feedback}", source="review_blocked", actor="ai")
+                task_service.set_status(
+                    task_id, TaskStatus.BLOCKED, actor="ai", summary="Review AI: 追加情報が必要"
+                )
+                task_service.add_context(
+                    task_id,
+                    f"Review AI からの確認事項: {results[task_id].feedback or review.feedback}",
+                    source="review_blocked",
+                    actor="ai",
+                )
             if review.status == "passed" or (passed and not failed and not blocked):
                 exec_service.set_plan_status(plan_id, PlanStatus.PASSED)
             elif failed:
@@ -568,24 +810,56 @@ class Orchestrator:
             feedback = review.feedback
         if passed:
             names = "、".join(titles[t] for t in passed)
-            self._notify("成果物の確認をお願いします", f"「{names}」の作業が完了し、確認待ちになりました。", level="normal", task_id=passed[0], dedupe_key=f"review_pending:{plan_id}", source="manager")
+            self._notify(
+                "成果物の確認をお願いします",
+                f"「{names}」の作業が完了し、確認待ちになりました。",
+                level="normal",
+                task_id=passed[0],
+                dedupe_key=f"review_pending:{plan_id}",
+                source="manager",
+            )
         if blocked:
             names = "、".join(titles[t] for t in blocked)
-            self._notify("追加情報が必要です", f"「{names}」を進めるには追加の情報が必要です。タスク詳細を確認してください。", level="normal", task_id=blocked[0], dedupe_key=f"blocked:{plan_id}", source="manager")
+            self._notify(
+                "追加情報が必要です",
+                f"「{names}」を進めるには追加の情報が必要です。タスク詳細を確認してください。",
+                level="normal",
+                task_id=blocked[0],
+                dedupe_key=f"blocked:{plan_id}",
+                source="manager",
+            )
         if failed:
             if attempt < limits["max_replanning_attempts"]:
-                result = await self._run_manager(trigger="review_failed", mode="replan", replan_plan_id=plan_id)
+                result = await self._run_manager(
+                    trigger="review_failed", mode="replan", replan_plan_id=plan_id
+                )
                 if result is None or not result.plan_ids:
                     self._exhaust(plan_id, failed, titles, "再計画が作成されなかったため作業を停止しました。")
             else:
-                self._exhaust(plan_id, failed, titles, f"再計画の上限（{limits['max_replanning_attempts']}回）に達したため作業を停止しました。\n{feedback[:400]}")
+                self._exhaust(
+                    plan_id,
+                    failed,
+                    titles,
+                    f"再計画の上限（{limits['max_replanning_attempts']}回）に達したため作業を停止しました。\n{feedback[:400]}",
+                )
 
     def _exhaust(self, plan_id: str, failed: list[str], titles: dict[str, str], message: str) -> None:
         with self.app.db.session() as session:
             task_service = TaskService(session, self.app.broker)
             for task_id in failed:
-                task_service.set_status(task_id, TaskStatus.BLOCKED, actor="system", summary="再試行上限に到達")
+                task_service.set_status(
+                    task_id, TaskStatus.BLOCKED, actor="system", summary="再試行上限に到達"
+                )
                 task_service.add_context(task_id, message, source="retry_exhausted", actor="system")
-            AuditService(session).record("plan.exhausted", "execution_plan", plan_id, "system", {"tasks": failed, "message": message})
+            AuditService(session).record(
+                "plan.exhausted", "execution_plan", plan_id, "system", {"tasks": failed, "message": message}
+            )
         names = "、".join(titles.get(t, t) for t in failed)
-        self._notify("AI の作業を停止しました", f"「{names}」: {message}", level="high", task_id=failed[0] if failed else None, dedupe_key=f"exhausted:{plan_id}", source="manager")
+        self._notify(
+            "AI の作業を停止しました",
+            f"「{names}」: {message}",
+            level="high",
+            task_id=failed[0] if failed else None,
+            dedupe_key=f"exhausted:{plan_id}",
+            source="manager",
+        )

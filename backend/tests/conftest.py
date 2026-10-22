@@ -68,7 +68,9 @@ def platform(tmp_path: Path) -> LinuxPlatformAdapter:
 
 @pytest.fixture
 def ctx(settings: Settings, platform: LinuxPlatformAdapter) -> Iterator[AppContext]:
-    context = build_context(settings=settings, platform=platform, secret_store=InMemorySecretProvider(), use_migrations=False)
+    context = build_context(
+        settings=settings, platform=platform, secret_store=InMemorySecretProvider(), use_migrations=False
+    )
     yield context
     context.db.dispose()
 

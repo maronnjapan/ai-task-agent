@@ -51,7 +51,15 @@ class DataPaths:
         return self.root / "aiwm.pid"
 
     def ensure(self) -> DataPaths:
-        for directory in (self.root, self.data, self.artifacts, self.backups, self.logs, self.exports, self.config):
+        for directory in (
+            self.root,
+            self.data,
+            self.artifacts,
+            self.backups,
+            self.logs,
+            self.exports,
+            self.config,
+        ):
             directory.mkdir(parents=True, exist_ok=True)
         return self
 

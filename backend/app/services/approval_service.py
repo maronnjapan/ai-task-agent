@@ -22,7 +22,9 @@ class ApprovalService:
         stmt = select(ApprovalRequest)
         if status:
             stmt = stmt.where(ApprovalRequest.status == status)
-        return list(self.session.execute(stmt.order_by(ApprovalRequest.created_at.desc()).limit(limit)).scalars())
+        return list(
+            self.session.execute(stmt.order_by(ApprovalRequest.created_at.desc()).limit(limit)).scalars()
+        )
 
     def get(self, approval_id: str) -> ApprovalRequest:
         row = self.session.get(ApprovalRequest, approval_id)
@@ -51,12 +53,22 @@ class ApprovalService:
         )
         self.session.add(row)
         self.session.flush()
-        self.audit.record("approval.requested", "approval", row.id, "ai", {"tool": tool_name, "connection_id": connection_id})
+        self.audit.record(
+            "approval.requested",
+            "approval",
+            row.id,
+            "ai",
+            {"tool": tool_name, "connection_id": connection_id},
+        )
         if self.broker:
-            self.broker.publish("approval.requested", {"approval_id": row.id, "tool_name": tool_name, "task_id": task_id})
+            self.broker.publish(
+                "approval.requested", {"approval_id": row.id, "tool_name": tool_name, "task_id": task_id}
+            )
         return row
 
-    def resolve(self, approval_id: str, approve: bool, comment: str | None = None, actor: str = "user") -> ApprovalRequest:
+    def resolve(
+        self, approval_id: str, approve: bool, comment: str | None = None, actor: str = "user"
+    ) -> ApprovalRequest:
         row = self.get(approval_id)
         if row.status != "pending":
             raise ValidationError("Approval request already resolved")
@@ -64,7 +76,11 @@ class ApprovalService:
         row.result = comment
         row.resolved_at = now_iso()
         self.session.flush()
-        self.audit.record("approval.resolved", "approval", row.id, actor, {"approved": approve, "comment": comment})
+        self.audit.record(
+            "approval.resolved", "approval", row.id, actor, {"approved": approve, "comment": comment}
+        )
         if self.broker:
-            self.broker.publish("approval.resolved", {"approval_id": row.id, "status": row.status, "task_id": row.task_id})
+            self.broker.publish(
+                "approval.resolved", {"approval_id": row.id, "status": row.status, "task_id": row.task_id}
+            )
         return row

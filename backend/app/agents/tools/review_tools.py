@@ -27,8 +27,25 @@ def build_review_tools(ctx: AgentContext) -> list[BaseTool]:
                     task = TaskService(session).get(link.task_id)
                 except ServiceError:
                     continue
-                tasks.append(task_to_dict(task, {"acceptance_criteria": link.acceptance_criteria, "decisions": [d.content for d in DecisionService(session).active(task.id)]}))
-            return as_json({"id": plan.id, "objective": plan.objective, "acceptance_criteria": plan.acceptance_criteria, "replanning_attempt": plan.replanning_attempt, "parent_plan_id": plan.parent_plan_id, "tasks": tasks})
+                tasks.append(
+                    task_to_dict(
+                        task,
+                        {
+                            "acceptance_criteria": link.acceptance_criteria,
+                            "decisions": [d.content for d in DecisionService(session).active(task.id)],
+                        },
+                    )
+                )
+            return as_json(
+                {
+                    "id": plan.id,
+                    "objective": plan.objective,
+                    "acceptance_criteria": plan.acceptance_criteria,
+                    "replanning_attempt": plan.replanning_attempt,
+                    "parent_plan_id": plan.parent_plan_id,
+                    "tasks": tasks,
+                }
+            )
 
     def get_work_item_results() -> str:
         """All work items of the plan with their reported results (dependency order)."""
@@ -44,7 +61,14 @@ def build_review_tools(ctx: AgentContext) -> list[BaseTool]:
                 content = service.read_content(artifact_id, version)
             except ServiceError as exc:
                 return f"error: {exc.message}"
-            return as_json({"id": artifact.id, "title": artifact.title, "version": version or artifact.version, "content": clip(content, 20_000)})
+            return as_json(
+                {
+                    "id": artifact.id,
+                    "title": artifact.title,
+                    "version": version or artifact.version,
+                    "content": clip(content, 20_000),
+                }
+            )
 
     def get_source_references(artifact_id: str | None = None) -> str:
         """Sources (citations) recorded for the plan's artifacts, optionally for one artifact."""
@@ -53,7 +77,16 @@ def build_review_tools(ctx: AgentContext) -> list[BaseTool]:
             artifacts = [service.get(artifact_id)] if artifact_id else service.list_for_plan(ctx.plan_id)
             rows: list[dict[str, Any]] = []
             for artifact in artifacts:
-                rows.append({"artifact_id": artifact.id, "title": artifact.title, "sources": [{"title": s.title, "reference": s.reference, "type": s.source_type} for s in artifact.sources]})
+                rows.append(
+                    {
+                        "artifact_id": artifact.id,
+                        "title": artifact.title,
+                        "sources": [
+                            {"title": s.title, "reference": s.reference, "type": s.source_type}
+                            for s in artifact.sources
+                        ],
+                    }
+                )
             return as_json(rows)
 
     def submit_review(status: str, feedback: str, task_results: list[dict[str, Any]] | None = None) -> str:

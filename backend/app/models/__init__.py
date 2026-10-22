@@ -1,5 +1,6 @@
 """SQLAlchemy models (SPEC section 23)."""
 
+from app.models.artifacts import ArtifactSource, ArtifactTaskLink, ArtifactVersion, TaskArtifact
 from app.models.base import Base
 from app.models.core import (
     Category,
@@ -19,19 +20,18 @@ from app.models.execution import (
     WorkItem,
     WorkItemDependency,
 )
-from app.models.artifacts import ArtifactSource, ArtifactTaskLink, ArtifactVersion, TaskArtifact
+from app.models.mcp import MCPConnection, MCPToolPermission
 from app.models.memory import Memory
 from app.models.system import (
     AppEvent,
-    AppSetting,
     ApprovalRequest,
+    AppSetting,
     AuditEvent,
     ManagerSettings,
     Notification,
     ScheduledAction,
     UserState,
 )
-from app.models.mcp import MCPConnection, MCPToolPermission
 
 __all__ = [
     "Base",

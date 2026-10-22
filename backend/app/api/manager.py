@@ -29,9 +29,21 @@ async def instruct(data: InstructionRequest, ctx: AppContext = Depends(get_ctx))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Manager AI failed: {exc}") from exc
     changes = []
-    for key, ids in (("plan", result.plan_ids), ("task_created", result.created_task_ids), ("task_updated", result.updated_task_ids), ("decision", result.decision_ids), ("notification", result.notification_ids), ("scheduled", result.scheduled_ids)):
+    for key, ids in (
+        ("plan", result.plan_ids),
+        ("task_created", result.created_task_ids),
+        ("task_updated", result.updated_task_ids),
+        ("decision", result.decision_ids),
+        ("notification", result.notification_ids),
+        ("scheduled", result.scheduled_ids),
+    ):
         changes.extend({"type": key, "id": i} for i in ids)
-    return InstructionOut(run_id=orchestrator.status.current_run_id or "", status="succeeded", response=result.text, changes=changes)
+    return InstructionOut(
+        run_id=orchestrator.status.current_run_id or "",
+        status="succeeded",
+        response=result.text,
+        changes=changes,
+    )
 
 
 @router.post("/run", response_model=Message)
@@ -63,8 +75,17 @@ def resume(ctx: AppContext = Depends(get_ctx)):
 
 
 @router.get("/runs", response_model=list[AgentRunOut])
-def runs(agent_type: str | None = None, plan_id: str | None = None, limit: int = Query(default=50, ge=1, le=500), offset: int = 0, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
-    rows, _ = ExecutionService(session, ctx.broker).list_runs(plan_id=plan_id, agent_type=agent_type, limit=limit, offset=offset)
+def runs(
+    agent_type: str | None = None,
+    plan_id: str | None = None,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    ctx: AppContext = Depends(get_ctx),
+):
+    rows, _ = ExecutionService(session, ctx.broker).list_runs(
+        plan_id=plan_id, agent_type=agent_type, limit=limit, offset=offset
+    )
     return [AgentRunOut.model_validate(r) for r in rows]
 
 
@@ -72,7 +93,20 @@ def runs(agent_type: str | None = None, plan_id: str | None = None, limit: int =
 def schedule(limit: int = Query(default=50, ge=1, le=500), session: Session = Depends(get_session)):
     from app.orchestrator.scheduler import SchedulerService
 
-    return [ScheduledActionOut(id=a.id, task_id=a.task_id, execution_plan_id=a.execution_plan_id, action_type=a.action_type, payload=loads(a.payload, None), scheduled_at=a.scheduled_at, status=a.status, created_at=a.created_at, executed_at=a.executed_at) for a in SchedulerService(session).list(limit=limit)]
+    return [
+        ScheduledActionOut(
+            id=a.id,
+            task_id=a.task_id,
+            execution_plan_id=a.execution_plan_id,
+            action_type=a.action_type,
+            payload=loads(a.payload, None),
+            scheduled_at=a.scheduled_at,
+            status=a.status,
+            created_at=a.created_at,
+            executed_at=a.executed_at,
+        )
+        for a in SchedulerService(session).list(limit=limit)
+    ]
 
 
 @router.delete("/schedule/{action_id}", response_model=Message)

@@ -44,13 +44,34 @@ class ReviewAgent(AgentRunnerBase):
             tasks = []
             for link in plan.task_links:
                 task = TaskService(session).get(link.task_id)
-                tasks.append({"task_id": task.id, "title": task.title, "description": clip(task.description, 400), "acceptance_criteria": link.acceptance_criteria})
+                tasks.append(
+                    {
+                        "task_id": task.id,
+                        "title": task.title,
+                        "description": clip(task.description, 400),
+                        "acceptance_criteria": link.acceptance_criteria,
+                    }
+                )
             artifacts = []
             service = _artifact_service(ctx, session)
             for artifact in service.list_for_plan(plan.id):
-                artifacts.append({"id": artifact.id, "title": artifact.title, "version": artifact.version, "task_id": artifact.task_id, "content_preview": clip(service.read_content(artifact.id), 6000), "sources": [s.reference for s in artifact.sources]})
+                artifacts.append(
+                    {
+                        "id": artifact.id,
+                        "title": artifact.title,
+                        "version": artifact.version,
+                        "task_id": artifact.task_id,
+                        "content_preview": clip(service.read_content(artifact.id), 6000),
+                        "sources": [s.reference for s in artifact.sources],
+                    }
+                )
             return {
-                "plan": {"id": plan.id, "objective": plan.objective, "acceptance_criteria": plan.acceptance_criteria, "replanning_attempt": plan.replanning_attempt},
+                "plan": {
+                    "id": plan.id,
+                    "objective": plan.objective,
+                    "acceptance_criteria": plan.acceptance_criteria,
+                    "replanning_attempt": plan.replanning_attempt,
+                },
                 "tasks": tasks,
                 "work_item_results": exec_service.work_item_results(plan.id),
                 "artifacts": artifacts,
@@ -60,9 +81,23 @@ class ReviewAgent(AgentRunnerBase):
         ctx = AgentContext(app=self.app, agent_type="review", run_id=run_id, plan_id=plan_id, mode="run")
         tools = build_review_tools(ctx)
         context = self.build_context(ctx)
-        prompt = "## レビュー対象\n" + dumps(context) + "\n\n完了条件への達成度をタスクごとに評価し、submit_review を呼んでください。"
+        prompt = (
+            "## レビュー対象\n"
+            + dumps(context)
+            + "\n\n完了条件への達成度をタスクごとに評価し、submit_review を呼んでください。"
+        )
         outcome = await self.invoke(self.system_prompt(), prompt, tools)
         recorded = ctx.recorder.get("review")
         if not recorded:
-            return ReviewResult(status="failed", feedback="Review AI did not submit a verdict: " + clip(outcome.text, 500), task_results=[], text=outcome.text)
-        return ReviewResult(status=recorded["status"], feedback=recorded.get("feedback", ""), task_results=list(recorded.get("task_results") or []), text=outcome.text)
+            return ReviewResult(
+                status="failed",
+                feedback="Review AI did not submit a verdict: " + clip(outcome.text, 500),
+                task_results=[],
+                text=outcome.text,
+            )
+        return ReviewResult(
+            status=recorded["status"],
+            feedback=recorded.get("feedback", ""),
+            task_results=list(recorded.get("task_results") or []),
+            text=outcome.text,
+        )

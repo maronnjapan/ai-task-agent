@@ -54,7 +54,9 @@ class AuditService:
         if event_type:
             stmt = stmt.where(AuditEvent.event_type == event_type)
         total = self.session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
-        rows = self.session.execute(
-            stmt.order_by(AuditEvent.created_at.desc()).limit(limit).offset(offset)
-        ).scalars().all()
+        rows = (
+            self.session.execute(stmt.order_by(AuditEvent.created_at.desc()).limit(limit).offset(offset))
+            .scalars()
+            .all()
+        )
         return list(rows), int(total)

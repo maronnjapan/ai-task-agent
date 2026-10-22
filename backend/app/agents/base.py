@@ -55,7 +55,9 @@ class AgentRunnerBase:
         model = self.model(config)
         graph = build_agent_graph(model, tools, max_iterations or self.max_iterations)
         state = {"messages": initial_messages(system_prompt, user_prompt, history), "iterations": 0}
-        result = await graph.ainvoke(state, config={"recursion_limit": (max_iterations or self.max_iterations) * 2 + 10})
+        result = await graph.ainvoke(
+            state, config={"recursion_limit": (max_iterations or self.max_iterations) * 2 + 10}
+        )
         messages = list(result["messages"])
         return AgentOutcome(
             text=final_text(messages),

@@ -52,7 +52,9 @@ class PlatformAdapter(ABC):
     autostart_method = "none"
     notification_method = "in_app"
 
-    def __init__(self, runner: CommandRunner | None = None, home: Path | None = None, env: dict[str, str] | None = None):
+    def __init__(
+        self, runner: CommandRunner | None = None, home: Path | None = None, env: dict[str, str] | None = None
+    ):
         self._run = runner or default_runner
         self._home = home or Path.home()
         self._env = env if env is not None else dict(os.environ)

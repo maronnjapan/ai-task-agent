@@ -13,7 +13,14 @@ class GoogleDriveAdapter(ServiceAdapter):
     label = "Google Drive"
     description = "Search and read Google Drive documents through a Google Drive MCP server."
     search_tool_candidates = ("gdrive_search", "search_files", "drive_search", "search")
-    read_only_tools = ("gdrive_search", "gdrive_read_file", "read_file", "get_file", "list_files", "search_files")
+    read_only_tools = (
+        "gdrive_search",
+        "gdrive_read_file",
+        "read_file",
+        "get_file",
+        "list_files",
+        "search_files",
+    )
     external_write_tools = ("create_file", "update_file", "delete_file", "share_file", "upload")
 
     def preset(self) -> AdapterPreset:
@@ -25,7 +32,9 @@ class GoogleDriveAdapter(ServiceAdapter):
             command="npx",
             args=["-y", "@modelcontextprotocol/server-gdrive"],
             auth_type="none",
-            env_hints={"GDRIVE_CREDENTIALS_PATH": "path to the OAuth credentials json created by the server's auth step"},
+            env_hints={
+                "GDRIVE_CREDENTIALS_PATH": "path to the OAuth credentials json created by the server's auth step"
+            },
         )
 
     def build_search_args(self, tool: ToolInfo, query: str, limit: int) -> dict[str, Any]:

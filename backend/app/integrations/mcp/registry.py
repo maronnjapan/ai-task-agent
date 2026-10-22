@@ -38,7 +38,9 @@ class ApprovalPendingError(RuntimeError):
 
 
 class MCPRegistry:
-    def __init__(self, app: AppContext, approval_wait_seconds: float = 0.0, approval_poll_seconds: float = 2.0):
+    def __init__(
+        self, app: AppContext, approval_wait_seconds: float = 0.0, approval_poll_seconds: float = 2.0
+    ):
         self.app = app
         self._clients: dict[str, MCPClient] = {}
         self._auth: dict[str, Any] = {}
@@ -106,7 +108,12 @@ class MCPRegistry:
             ok = True
             server_name = client.server_info.get("name")
         except Exception as exc:  # noqa: BLE001
-            tools, ok, message, server_name = [], False, get_adapter(config.adapter).translate_error(exc), None
+            tools, ok, message, server_name = (
+                [],
+                False,
+                get_adapter(config.adapter).translate_error(exc),
+                None,
+            )
         finally:
             await client.disconnect()
         duration = int((time.monotonic() - started) * 1000)
@@ -115,8 +122,16 @@ class MCPRegistry:
             if row is not None:
                 row.last_error = None if ok else message
                 row.last_tested_at = now_iso()
-            AuditService(session).record("mcp.test", "mcp_connection", config.id, "user", {"ok": ok, "message": message})
-        return {"ok": ok, "message": message, "tools": [self.describe_tool(config, t) for t in tools], "server_name": server_name, "duration_ms": duration}
+            AuditService(session).record(
+                "mcp.test", "mcp_connection", config.id, "user", {"ok": ok, "message": message}
+            )
+        return {
+            "ok": ok,
+            "message": message,
+            "tools": [self.describe_tool(config, t) for t in tools],
+            "server_name": server_name,
+            "duration_ms": duration,
+        }
 
     async def list_tools(self, connection_id: str) -> list[dict[str, Any]]:
         config = self.config(connection_id)
@@ -126,7 +141,13 @@ class MCPRegistry:
 
     def describe_tool(self, config: ConnectionConfig, tool: ToolInfo) -> dict[str, Any]:
         permission, enabled = self.permission_for(config, tool)
-        return {"name": tool.name, "description": tool.description, "input_schema": tool.input_schema, "permission": permission, "enabled": enabled}
+        return {
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+            "permission": permission,
+            "enabled": enabled,
+        }
 
     def permission_for(self, config: ConnectionConfig, tool: ToolInfo) -> tuple[str, bool]:
         explicit = config.tool_permissions.get(tool.name)
@@ -136,7 +157,14 @@ class MCPRegistry:
         return get_adapter(config.adapter).classify(tool), enabled
 
     # --- tool execution with permission enforcement --------------------
-    async def call_tool(self, connection_id: str, tool_name: str, arguments: dict[str, Any], agent_ctx: AgentContext | None = None, reason: str | None = None) -> ToolResult:
+    async def call_tool(
+        self,
+        connection_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        agent_ctx: AgentContext | None = None,
+        reason: str | None = None,
+    ) -> ToolResult:
         config = self.config(connection_id)
         if not config.enabled:
             raise PermissionDeniedError(f"connection {config.name} is disabled")
@@ -163,13 +191,33 @@ class MCPRegistry:
             else:
                 raise MCPConnectionError(adapter.translate_error(exc)) from exc
         with self.app.db.session() as session:
-            AuditService(session).record("mcp.tool_call", "mcp_connection", config.id, "ai", {"tool": info.name, "permission": permission, "is_error": result.is_error})
+            AuditService(session).record(
+                "mcp.tool_call",
+                "mcp_connection",
+                config.id,
+                "ai",
+                {"tool": info.name, "permission": permission, "is_error": result.is_error},
+            )
         return result
 
-    async def _require_approval(self, config: ConnectionConfig, tool_name: str, arguments: dict[str, Any], agent_ctx: AgentContext | None, reason: str | None) -> None:
+    async def _require_approval(
+        self,
+        config: ConnectionConfig,
+        tool_name: str,
+        arguments: dict[str, Any],
+        agent_ctx: AgentContext | None,
+        reason: str | None,
+    ) -> None:
         with self.app.db.session() as session:
             approvals = ApprovalService(session, self.app.broker)
-            request = approvals.request(tool_name, arguments, connection_id=config.id, task_id=(agent_ctx.task_ids[0] if agent_ctx and agent_ctx.task_ids else None), work_item_id=agent_ctx.work_item_id if agent_ctx else None, reason=reason or f"{config.name} への外部書き込み")
+            request = approvals.request(
+                tool_name,
+                arguments,
+                connection_id=config.id,
+                task_id=(agent_ctx.task_ids[0] if agent_ctx and agent_ctx.task_ids else None),
+                work_item_id=agent_ctx.work_item_id if agent_ctx else None,
+                reason=reason or f"{config.name} への外部書き込み",
+            )
             approval_id = request.id
         deadline = time.monotonic() + self.approval_wait_seconds
         while True:
@@ -181,7 +229,10 @@ class MCPRegistry:
             if status in ("rejected", "expired"):
                 raise PermissionDeniedError(f"user rejected {tool_name} on {config.name}")
             if time.monotonic() >= deadline:
-                raise ApprovalPendingError(approval_id, f"{tool_name} requires user approval (request {approval_id}); the work item should report blocked until it is approved")
+                raise ApprovalPendingError(
+                    approval_id,
+                    f"{tool_name} requires user approval (request {approval_id}); the work item should report blocked until it is approved",
+                )
             await asyncio.sleep(self.approval_poll_seconds)
 
     # --- service search (Slack / Drive / Confluence / Jira) ------------
@@ -191,7 +242,9 @@ class MCPRegistry:
                 return config
         return None
 
-    async def search_service(self, adapter_name: str, query: str, limit: int = 10, agent_ctx: AgentContext | None = None) -> list[dict[str, Any]]:
+    async def search_service(
+        self, adapter_name: str, query: str, limit: int = 10, agent_ctx: AgentContext | None = None
+    ) -> list[dict[str, Any]]:
         config = self.connection_for_adapter(adapter_name)
         if config is None:
             raise MCPConnectionError(f"no enabled {adapter_name} connection is configured")
@@ -228,13 +281,17 @@ class MCPRegistry:
                 tools.append(self._make_langchain_tool(config, info, permission, agent_ctx))
         return tools
 
-    def _make_langchain_tool(self, config: ConnectionConfig, info: ToolInfo, permission: str, agent_ctx: AgentContext) -> BaseTool:
+    def _make_langchain_tool(
+        self, config: ConnectionConfig, info: ToolInfo, permission: str, agent_ctx: AgentContext
+    ) -> BaseTool:
         from pydantic import Field, create_model
 
         connection_id, tool_name = config.id, info.name
         fields: dict[str, Any] = {}
         props = (info.input_schema or {}).get("properties", {}) if isinstance(info.input_schema, dict) else {}
-        required = set((info.input_schema or {}).get("required", []) if isinstance(info.input_schema, dict) else [])
+        required = set(
+            (info.input_schema or {}).get("required", []) if isinstance(info.input_schema, dict) else []
+        )
         for key, spec in props.items():
             description = spec.get("description", "") if isinstance(spec, dict) else ""
             fields[key] = (Any, Field(default=... if key in required else None, description=description))
@@ -256,7 +313,13 @@ class MCPRegistry:
         description = f"[{config.name} / {permission}] {info.description or tool_name}"
         if requires_approval(permission):
             description += " (requires user approval before execution)"
-        return StructuredTool.from_function(coroutine=_call, name=safe, description=description[:1000], args_schema=args_model, infer_schema=args_model is None)
+        return StructuredTool.from_function(
+            coroutine=_call,
+            name=safe,
+            description=description[:1000],
+            args_schema=args_model,
+            infer_schema=args_model is None,
+        )
 
     # --- OAuth helpers -------------------------------------------------
     def begin_oauth(self, connection_id: str) -> dict[str, str]:

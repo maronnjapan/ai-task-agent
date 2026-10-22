@@ -136,7 +136,9 @@ class OAuth2Auth:
 
     auth_type = "oauth2"
 
-    def __init__(self, config: ConnectionConfig, secret_store: SecretProvider, http_post: HttpPost | None = None):
+    def __init__(
+        self, config: ConnectionConfig, secret_store: SecretProvider, http_post: HttpPost | None = None
+    ):
         self.config = config
         self.secret_store = secret_store
         self.http_post = http_post or default_http_post
@@ -168,7 +170,11 @@ class OAuth2Auth:
         if self.settings.get("scope"):
             params["scope"] = str(self.settings["scope"])
         if code_verifier:
-            challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
+            challenge = (
+                base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+                .rstrip(b"=")
+                .decode()
+            )
             params["code_challenge"] = challenge
             params["code_challenge_method"] = "S256"
         for key, value in (self.settings.get("extra_authorize_params") or {}).items():
@@ -198,7 +204,11 @@ class OAuth2Auth:
     async def refresh(self) -> OAuthTokens:
         if not self._tokens or not self._tokens.refresh_token:
             raise OAuthError("no refresh token available; re-authentication required")
-        data = {"grant_type": "refresh_token", "refresh_token": self._tokens.refresh_token, "client_id": self.client_id}
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": self._tokens.refresh_token,
+            "client_id": self.client_id,
+        }
         secret = self.client_secret
         if secret:
             data["client_secret"] = secret
@@ -254,7 +264,11 @@ class OAuthFlowManager:
 
     def begin(self, connection_id: str) -> PendingAuthorization:
         self._cleanup()
-        pending = PendingAuthorization(connection_id=connection_id, state=secrets.token_urlsafe(24), code_verifier=secrets.token_urlsafe(48))
+        pending = PendingAuthorization(
+            connection_id=connection_id,
+            state=secrets.token_urlsafe(24),
+            code_verifier=secrets.token_urlsafe(48),
+        )
         self._pending[pending.state] = pending
         return pending
 
@@ -268,7 +282,9 @@ class OAuthFlowManager:
             self._pending.pop(key, None)
 
 
-def build_auth(config: ConnectionConfig, secret_store: SecretProvider, http_post: HttpPost | None = None) -> AuthStrategy:
+def build_auth(
+    config: ConnectionConfig, secret_store: SecretProvider, http_post: HttpPost | None = None
+) -> AuthStrategy:
     auth_type = (config.auth_type or "none").lower()
     if auth_type == "none":
         return NoAuth()

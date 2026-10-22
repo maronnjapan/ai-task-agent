@@ -9,21 +9,29 @@ import pytest
 
 from app.infrastructure.logging import SecretRedactingFilter, redact, register_secret
 from app.infrastructure.secrets.base import InMemorySecretProvider, LayeredSecretProvider
-from app.infrastructure.secrets.bootstrap import SecretBootstrap, secret_name_for_provider, select_secret_provider
+from app.infrastructure.secrets.bootstrap import (
+    SecretBootstrap,
+    secret_name_for_provider,
+    select_secret_provider,
+)
 from app.infrastructure.secrets.dotenv import DotEnvSecretProvider
 from app.infrastructure.secrets.keychain import MacOSKeychainSecretProvider
 
 
 def test_dotenv_provider_roundtrip(tmp_path: Path):
     env = tmp_path / ".env"
-    env.write_text("APP_PORT=8765\nOPENAI_API_KEY=\n# comment\nexport ANTHROPIC_API_KEY='sk-ant-abc'\n", encoding="utf-8")
+    env.write_text(
+        "APP_PORT=8765\nOPENAI_API_KEY=\n# comment\nexport ANTHROPIC_API_KEY='sk-ant-abc'\n", encoding="utf-8"
+    )
     provider = DotEnvSecretProvider(env, env_fallback=False)
     assert provider.get_secret("OPENAI_API_KEY") is None
     assert provider.get_secret("ANTHROPIC_API_KEY") == "sk-ant-abc"
     provider.set_secret("OPENAI_API_KEY", "sk-test 123")
     provider.set_secret("GOOGLE_API_KEY", "AIza-x")
     text = env.read_text()
-    assert 'OPENAI_API_KEY="sk-test 123"' in text and "GOOGLE_API_KEY=AIza-x" in text and "APP_PORT=8765" in text
+    assert (
+        'OPENAI_API_KEY="sk-test 123"' in text and "GOOGLE_API_KEY=AIza-x" in text and "APP_PORT=8765" in text
+    )
     assert provider.get_secret("OPENAI_API_KEY") == "sk-test 123"
     if os.name != "nt":
         assert stat.S_IMODE(env.stat().st_mode) == 0o600
@@ -87,7 +95,9 @@ def test_bootstrap_prompts_and_stores_missing_keys():
         confirmations.append(name)
         return True
 
-    result = SecretBootstrap(store, prompter=prompter, confirmer=confirmer, interactive=True).run(["openai", "anthropic", "gemini"])
+    result = SecretBootstrap(store, prompter=prompter, confirmer=confirmer, interactive=True).run(
+        ["openai", "anthropic", "gemini"]
+    )
     assert result.secrets.get_secret("OPENAI_API_KEY") == "sk-entered"
     assert result.secrets.get_secret("ANTHROPIC_API_KEY") == "existing"
     assert store.get_secret("OPENAI_API_KEY") == "sk-entered"  # saved to the backend
@@ -100,7 +110,9 @@ def test_bootstrap_prompts_and_stores_missing_keys():
 
 def test_bootstrap_declined_save_keeps_key_in_memory_only():
     store = InMemorySecretProvider()
-    result = SecretBootstrap(store, prompter=lambda _: "sk-temp", confirmer=lambda _: False, interactive=True).run(["openai"])
+    result = SecretBootstrap(
+        store, prompter=lambda _: "sk-temp", confirmer=lambda _: False, interactive=True
+    ).run(["openai"])
     assert result.secrets.get_secret("OPENAI_API_KEY") == "sk-temp"
     assert store.get_secret("OPENAI_API_KEY") is None
 

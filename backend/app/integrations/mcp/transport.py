@@ -29,7 +29,9 @@ def resolve_command(command: str) -> str:
 
 
 @asynccontextmanager
-async def open_transport(config: ConnectionConfig, headers: dict[str, str] | None = None) -> AsyncIterator[tuple[Any, Any]]:
+async def open_transport(
+    config: ConnectionConfig, headers: dict[str, str] | None = None
+) -> AsyncIterator[tuple[Any, Any]]:
     """Yield ``(read_stream, write_stream)`` for the configured transport."""
     if config.transport == "stdio":
         from mcp import StdioServerParameters
@@ -37,7 +39,11 @@ async def open_transport(config: ConnectionConfig, headers: dict[str, str] | Non
 
         if not config.command:
             raise ValueError("stdio transport requires a command")
-        params = StdioServerParameters(command=resolve_command(config.command), args=list(config.args), env={**os.environ, **config.env} if config.env else None)
+        params = StdioServerParameters(
+            command=resolve_command(config.command),
+            args=list(config.args),
+            env={**os.environ, **config.env} if config.env else None,
+        )
         async with stdio_client(params) as streams:
             yield streams[0], streams[1]
         return
@@ -48,7 +54,9 @@ async def open_transport(config: ConnectionConfig, headers: dict[str, str] | Non
         if not config.url:
             raise ValueError("streamable_http transport requires a url")
         merged = {**config.headers, **(headers or {})}
-        timeout = httpx2.Timeout(float(config.timeout_seconds), read=max(60.0, float(config.timeout_seconds) * 10))
+        timeout = httpx2.Timeout(
+            float(config.timeout_seconds), read=max(60.0, float(config.timeout_seconds) * 10)
+        )
         async with create_mcp_http_client(headers=merged, timeout=timeout) as client:
             async with streamable_http_client(config.url, http_client=client) as streams:
                 yield streams[0], streams[1]

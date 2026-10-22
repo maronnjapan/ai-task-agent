@@ -8,7 +8,11 @@ from typing import Any
 
 from app.agents.base import AgentOutcome, AgentRunnerBase
 from app.agents.context import AgentContext, clip
-from app.agents.prompts.manager import MANAGER_INSTRUCTION_PROMPT, MANAGER_REPLAN_PROMPT, MANAGER_SYSTEM_PROMPT
+from app.agents.prompts.manager import (
+    MANAGER_INSTRUCTION_PROMPT,
+    MANAGER_REPLAN_PROMPT,
+    MANAGER_SYSTEM_PROMPT,
+)
 from app.agents.tools.manager_tools import build_manager_tools
 from app.orchestrator.scheduler import SchedulerService
 from app.services.chat_service import DecisionService
@@ -43,7 +47,13 @@ class ManagerAgent(AgentRunnerBase):
     agent_type = "manager"
     max_iterations = 14
 
-    def build_context(self, mode: str, instruction: str | None = None, replan_plan_id: str | None = None, trigger: str | None = None) -> str:
+    def build_context(
+        self,
+        mode: str,
+        instruction: str | None = None,
+        replan_plan_id: str | None = None,
+        trigger: str | None = None,
+    ) -> str:
         """Collect the Manager's context from SQLite (SPEC 8.5)."""
         with self.app.db.session() as session:
             settings = SettingsService(session, self.app.settings)
@@ -72,33 +82,81 @@ class ManagerAgent(AgentRunnerBase):
                 )
             plans = []
             for plan in exec_service.active_plans():
-                plans.append({"id": plan.id, "status": plan.status, "objective": plan.objective, "tasks": [l.task_id for l in plan.task_links], "progress": exec_service.plan_progress(plan.id)})
+                plans.append(
+                    {
+                        "id": plan.id,
+                        "status": plan.status,
+                        "objective": plan.objective,
+                        "tasks": [link.task_id for link in plan.task_links],
+                        "progress": exec_service.plan_progress(plan.id),
+                    }
+                )
             recent_failed = []
             failed_plans, _ = exec_service.list_plans(status="failed,blocked", limit=5)
             for plan in failed_plans:
                 review = exec_service.latest_review(plan.id)
-                recent_failed.append({"id": plan.id, "status": plan.status, "objective": plan.objective, "attempt": plan.replanning_attempt, "feedback": clip(review.feedback if review else "", 600)})
-            memories = [{"scope": m.scope, "kind": m.kind, "content": clip(m.content, 300)} for m in MemoryService(session).global_memories(limit=15)]
+                recent_failed.append(
+                    {
+                        "id": plan.id,
+                        "status": plan.status,
+                        "objective": plan.objective,
+                        "attempt": plan.replanning_attempt,
+                        "feedback": clip(review.feedback if review else "", 600),
+                    }
+                )
+            memories = [
+                {"scope": m.scope, "kind": m.kind, "content": clip(m.content, 300)}
+                for m in MemoryService(session).global_memories(limit=15)
+            ]
             user_state = UserStateService(session)
             state = user_state.get()
             notifications = NotificationService(session).recent_summary(hours=24, limit=8)
-            scheduled = [{"id": a.id, "type": a.action_type, "at": a.scheduled_at, "task_id": a.task_id} for a in SchedulerService(session).pending()[:10]]
+            scheduled = [
+                {"id": a.id, "type": a.action_type, "at": a.scheduled_at, "task_id": a.task_id}
+                for a in SchedulerService(session).pending()[:10]
+            ]
             replan_block = None
             if replan_plan_id:
                 plan = exec_service.get_plan(replan_plan_id)
                 review = exec_service.latest_review(plan.id)
                 replan_block = {
-                    "failed_plan": {"id": plan.id, "objective": plan.objective, "acceptance_criteria": plan.acceptance_criteria, "attempt": plan.replanning_attempt, "tasks": [{"task_id": l.task_id, "acceptance_criteria": l.acceptance_criteria} for l in plan.task_links]},
+                    "failed_plan": {
+                        "id": plan.id,
+                        "objective": plan.objective,
+                        "acceptance_criteria": plan.acceptance_criteria,
+                        "attempt": plan.replanning_attempt,
+                        "tasks": [
+                            {"task_id": link.task_id, "acceptance_criteria": link.acceptance_criteria}
+                            for link in plan.task_links
+                        ],
+                    },
                     "work_item_results": exec_service.work_item_results(plan.id),
-                    "review": {"status": review.status, "feedback": review.feedback, "task_results": [{"task_id": r.task_id, "status": r.status, "feedback": r.feedback} for r in review.task_results]} if review else None,
+                    "review": {
+                        "status": review.status,
+                        "feedback": review.feedback,
+                        "task_results": [
+                            {"task_id": r.task_id, "status": r.status, "feedback": r.feedback}
+                            for r in review.task_results
+                        ],
+                    }
+                    if review
+                    else None,
                     "max_replanning_attempts": manager.max_replanning_attempts,
                 }
             context = {
                 "now": now_iso(),
                 "trigger": trigger,
                 "mode": mode,
-                "manager_settings": {"autonomy_level": manager.autonomy_level, "reminder_aggressiveness": manager.reminder_aggressiveness, "reevaluation_interval_minutes": manager.reevaluation_interval_minutes},
-                "user_state": {"condition": state.condition or None, "active": user_state.is_active(state), "source": state.source},
+                "manager_settings": {
+                    "autonomy_level": manager.autonomy_level,
+                    "reminder_aggressiveness": manager.reminder_aggressiveness,
+                    "reevaluation_interval_minutes": manager.reevaluation_interval_minutes,
+                },
+                "user_state": {
+                    "condition": state.condition or None,
+                    "active": user_state.is_active(state),
+                    "source": state.source,
+                },
                 "tasks": task_rows,
                 "active_plans": plans,
                 "recent_failed_or_blocked_plans": recent_failed,
@@ -127,10 +185,21 @@ class ManagerAgent(AgentRunnerBase):
             prompt += "\n\n## 追加のシステム指示\n" + config.custom_prompt
         return prompt
 
-    async def run(self, mode: str = "evaluate", trigger: str | None = None, instruction: str | None = None, replan_plan_id: str | None = None, run_id: str | None = None) -> ManagerResult:
-        ctx = AgentContext(app=self.app, agent_type="manager", run_id=run_id, plan_id=replan_plan_id, mode=mode)
+    async def run(
+        self,
+        mode: str = "evaluate",
+        trigger: str | None = None,
+        instruction: str | None = None,
+        replan_plan_id: str | None = None,
+        run_id: str | None = None,
+    ) -> ManagerResult:
+        ctx = AgentContext(
+            app=self.app, agent_type="manager", run_id=run_id, plan_id=replan_plan_id, mode=mode
+        )
         tools = build_manager_tools(ctx)
-        prompt = self.build_context(mode, instruction=instruction, replan_plan_id=replan_plan_id, trigger=trigger)
+        prompt = self.build_context(
+            mode, instruction=instruction, replan_plan_id=replan_plan_id, trigger=trigger
+        )
         outcome: AgentOutcome = await self.invoke(self.system_prompt(), prompt, tools)
         return ManagerResult(
             text=outcome.text,

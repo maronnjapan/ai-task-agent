@@ -10,7 +10,14 @@ from app.integrations.mcp.adapters.jira import JiraAdapter
 from app.integrations.mcp.adapters.slack import SlackAdapter
 
 _ADAPTERS: dict[str, ServiceAdapter] = {
-    adapter.name: adapter for adapter in (GenericAdapter(), SlackAdapter(), GoogleDriveAdapter(), ConfluenceAdapter(), JiraAdapter())
+    adapter.name: adapter
+    for adapter in (
+        GenericAdapter(),
+        SlackAdapter(),
+        GoogleDriveAdapter(),
+        ConfluenceAdapter(),
+        JiraAdapter(),
+    )
 }
 
 

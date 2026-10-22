@@ -43,22 +43,62 @@ def build_execution_context(ctx: AgentContext, session) -> dict[str, Any]:
             continue
         decisions = [d.content for d in DecisionService(session).active(task.id)]
         contexts = [{"context": c.context, "source": c.source} for c in task_service.open_contexts(task.id)]
-        tasks_data.append(task_to_dict(task, {"acceptance_criteria": link.acceptance_criteria, "decisions": decisions, "open_user_contexts": contexts}))
-        for memory in memory_service.relevant_for_task(task, query=item.description if item else None, limit=10):
+        tasks_data.append(
+            task_to_dict(
+                task,
+                {
+                    "acceptance_criteria": link.acceptance_criteria,
+                    "decisions": decisions,
+                    "open_user_contexts": contexts,
+                },
+            )
+        )
+        for memory in memory_service.relevant_for_task(
+            task, query=item.description if item else None, limit=10
+        ):
             memories[memory.id] = memory_to_dict(memory)
     deps_results = []
     if plan and item:
         deps = exec_service.dependencies(plan.id)
         for dep_id in sorted(deps.get(item.id, ())):
             dep = exec_service.get_work_item(dep_id)
-            deps_results.append({"work_item_id": dep.id, "title": dep.title, "status": dep.status, "result": loads(dep.result, None)})
+            deps_results.append(
+                {
+                    "work_item_id": dep.id,
+                    "title": dep.title,
+                    "status": dep.status,
+                    "result": loads(dep.result, None),
+                }
+            )
     artifacts = []
     if plan:
         for artifact in _artifact_service(ctx, session).list_for_plan(plan.id):
-            artifacts.append({"id": artifact.id, "title": artifact.title, "version": artifact.version, "status": artifact.status, "task_id": artifact.task_id})
+            artifacts.append(
+                {
+                    "id": artifact.id,
+                    "title": artifact.title,
+                    "version": artifact.version,
+                    "status": artifact.status,
+                    "task_id": artifact.task_id,
+                }
+            )
     return {
-        "work_item": {"id": item.id, "title": item.title, "description": item.description, "retry_count": item.retry_count} if item else None,
-        "plan": {"id": plan.id, "objective": plan.objective, "acceptance_criteria": plan.acceptance_criteria, "replanning_attempt": plan.replanning_attempt} if plan else None,
+        "work_item": {
+            "id": item.id,
+            "title": item.title,
+            "description": item.description,
+            "retry_count": item.retry_count,
+        }
+        if item
+        else None,
+        "plan": {
+            "id": plan.id,
+            "objective": plan.objective,
+            "acceptance_criteria": plan.acceptance_criteria,
+            "replanning_attempt": plan.replanning_attempt,
+        }
+        if plan
+        else None,
         "tasks": tasks_data,
         "memories": list(memories.values()),
         "dependency_results": deps_results,
@@ -73,7 +113,13 @@ def _previous_review(exec_service: ExecutionService, plan) -> dict | None:
     review = exec_service.latest_review(plan.parent_plan_id)
     if review is None:
         return None
-    return {"status": review.status, "feedback": review.feedback, "task_results": [{"task_id": r.task_id, "status": r.status, "feedback": r.feedback} for r in review.task_results]}
+    return {
+        "status": review.status,
+        "feedback": review.feedback,
+        "task_results": [
+            {"task_id": r.task_id, "status": r.status, "feedback": r.feedback} for r in review.task_results
+        ],
+    }
 
 
 def build_worker_tools(ctx: AgentContext, mcp_tools: list[BaseTool] | None = None) -> list[BaseTool]:
@@ -83,7 +129,16 @@ def build_worker_tools(ctx: AgentContext, mcp_tools: list[BaseTool] | None = Non
         """The work item assigned to this run (instructions, status, retry count)."""
         with ctx.session() as session:
             item = ExecutionService(session).get_work_item(ctx.work_item_id)
-            return as_json({"id": item.id, "title": item.title, "description": item.description, "status": item.status, "retry_count": item.retry_count, "plan_id": item.execution_plan_id})
+            return as_json(
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "description": item.description,
+                    "status": item.status,
+                    "retry_count": item.retry_count,
+                    "plan_id": item.execution_plan_id,
+                }
+            )
 
     def get_execution_context() -> str:
         """Plan objective, acceptance criteria, related tasks, decisions, memories, dependency results and existing artifacts."""
@@ -149,9 +204,19 @@ def build_worker_tools(ctx: AgentContext, mcp_tools: list[BaseTool] | None = Non
                 content = service.read_content(artifact_id, version)
             except ServiceError as exc:
                 return f"error: {exc.message}"
-            return as_json({"id": artifact.id, "title": artifact.title, "version": version or artifact.version, "status": artifact.status, "content": clip(content)})
+            return as_json(
+                {
+                    "id": artifact.id,
+                    "title": artifact.title,
+                    "version": version or artifact.version,
+                    "status": artifact.status,
+                    "content": clip(content),
+                }
+            )
 
-    def create_markdown_artifact(title: str, content: str, task_id: str | None = None, sources: list[dict[str, Any]] | None = None) -> str:
+    def create_markdown_artifact(
+        title: str, content: str, task_id: str | None = None, sources: list[dict[str, Any]] | None = None
+    ) -> str:
         """Create a Markdown artifact for a task of this plan. sources: [{"title": str, "reference": url-or-path, "source_type": web|file|slack|...}]."""
         with ctx.session() as session:
             exec_service = ExecutionService(session)
@@ -173,19 +238,34 @@ def build_worker_tools(ctx: AgentContext, mcp_tools: list[BaseTool] | None = Non
             except ServiceError as exc:
                 return f"error: {exc.message}"
             ctx.record("artifacts", artifact.id)
-            return as_json({"artifact_id": artifact.id, "version": artifact.version, "file_path": artifact.file_path})
+            return as_json(
+                {"artifact_id": artifact.id, "version": artifact.version, "file_path": artifact.file_path}
+            )
 
-    def update_markdown_artifact(artifact_id: str, content: str, change_note: str | None = None, sources: list[dict[str, Any]] | None = None) -> str:
+    def update_markdown_artifact(
+        artifact_id: str,
+        content: str,
+        change_note: str | None = None,
+        sources: list[dict[str, Any]] | None = None,
+    ) -> str:
         """Revise an existing artifact (creates a new version)."""
         with ctx.session() as session:
             try:
-                artifact = _artifact_service(ctx, session).update_content(artifact_id, content, change_note=change_note, actor="ai", sources=sources)
+                artifact = _artifact_service(ctx, session).update_content(
+                    artifact_id, content, change_note=change_note, actor="ai", sources=sources
+                )
             except ServiceError as exc:
                 return f"error: {exc.message}"
             ctx.record("artifacts", artifact.id)
             return as_json({"artifact_id": artifact.id, "version": artifact.version})
 
-    def report_work_result(status: str, summary: str, artifact_ids: list[str] | None = None, sources: list[dict[str, Any]] | None = None, blockers: list[str] | None = None) -> str:
+    def report_work_result(
+        status: str,
+        summary: str,
+        artifact_ids: list[str] | None = None,
+        sources: list[dict[str, Any]] | None = None,
+        blockers: list[str] | None = None,
+    ) -> str:
         """Report the final result of this work item (status: succeeded | failed | blocked). Call exactly once at the end."""
         if status not in ("succeeded", "failed", "blocked"):
             return "error: status must be succeeded, failed or blocked"
@@ -207,11 +287,20 @@ def build_worker_tools(ctx: AgentContext, mcp_tools: list[BaseTool] | None = Non
         make_tool(read_local_file, "read_local_file", read_local_file.__doc__ or ""),
         make_tool(search_memory, "search_memory", search_memory.__doc__ or ""),
         make_tool(read_artifact, "read_artifact", read_artifact.__doc__ or ""),
-        make_tool(create_markdown_artifact, "create_markdown_artifact", create_markdown_artifact.__doc__ or ""),
-        make_tool(update_markdown_artifact, "update_markdown_artifact", update_markdown_artifact.__doc__ or ""),
+        make_tool(
+            create_markdown_artifact, "create_markdown_artifact", create_markdown_artifact.__doc__ or ""
+        ),
+        make_tool(
+            update_markdown_artifact, "update_markdown_artifact", update_markdown_artifact.__doc__ or ""
+        ),
         make_tool(report_work_result, "report_work_result", report_work_result.__doc__ or ""),
     ]
-    for service, label in (("slack", "Slack messages and threads"), ("google_drive", "Google Drive documents"), ("confluence", "Confluence pages"), ("jira", "Jira issues")):
+    for service, label in (
+        ("slack", "Slack messages and threads"),
+        ("google_drive", "Google Drive documents"),
+        ("confluence", "Confluence pages"),
+        ("jira", "Jira issues"),
+    ):
         coroutine = _service_search(service)
 
         def _sync(query: str, limit: int = 10, _coro=coroutine) -> str:
@@ -219,7 +308,14 @@ def build_worker_tools(ctx: AgentContext, mcp_tools: list[BaseTool] | None = Non
 
             return asyncio.run(_coro(query, limit))
 
-        tools.append(make_tool(_sync, f"search_{service}", f"Search {label} through the configured MCP connection (read-only).", coroutine=coroutine))
+        tools.append(
+            make_tool(
+                _sync,
+                f"search_{service}",
+                f"Search {label} through the configured MCP connection (read-only).",
+                coroutine=coroutine,
+            )
+        )
     tools.extend(mcp_tools or [])
     return tools
 
@@ -234,7 +330,8 @@ def result_from_recorder(ctx: AgentContext, final_text: str) -> dict[str, Any]:
     return {
         "work_item_id": ctx.work_item_id,
         "status": status,
-        "summary": final_text or ("Worker finished without an explicit report" if artifacts else "Worker did not report a result"),
+        "summary": final_text
+        or ("Worker finished without an explicit report" if artifacts else "Worker did not report a result"),
         "artifact_ids": list(dict.fromkeys(artifacts)),
         "sources": [],
         "blockers": [] if artifacts else ["no_report"],

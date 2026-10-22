@@ -46,7 +46,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
     for provider in ("openai", "anthropic", "google"):
         name = secret_name_for_provider(provider)
-        print(f"{name:<18}: {'configured' if ctx.secrets.get_secret(name) or ctx.secret_store.get_secret(name) else 'not set'}")
+        print(
+            f"{name:<18}: {'configured' if ctx.secrets.get_secret(name) or ctx.secret_store.get_secret(name) else 'not set'}"
+        )
     print()
     print("Setup complete. Start the app with: aiwm start")
     return 0
@@ -100,7 +102,9 @@ def cmd_backup(args: argparse.Namespace) -> int:
     from app.infrastructure.paths import build_paths
 
     paths = build_paths(get_settings().resolved_data_dir()).ensure()
-    info = BackupService(paths, __version__).create(Path(args.directory) if args.directory else None, label=args.label)
+    info = BackupService(paths, __version__).create(
+        Path(args.directory) if args.directory else None, label=args.label
+    )
     print(f"Backup written: {info.path} ({info.size_bytes} bytes)")
     return 0
 
@@ -115,7 +119,9 @@ def cmd_restore(args: argparse.Namespace) -> int:
         print("Stop the running backend before restoring.")
         return 1
     if not args.yes:
-        answer = input(f"Restore {args.archive}? The current data will be backed up first. [y/N] ").strip().lower()
+        answer = (
+            input(f"Restore {args.archive}? The current data will be backed up first. [y/N] ").strip().lower()
+        )
         if answer not in ("y", "yes"):
             return 1
     safety = BackupService(paths, __version__).restore(Path(args.archive))
@@ -134,10 +140,20 @@ def cmd_autostart(args: argparse.Namespace) -> int:
     paths = build_paths(settings.resolved_data_dir()).ensure()
     platform = make_platform_adapter()
     if args.action == "install":
-        spec = AutostartSpec(label=AUTOSTART_LABEL, command=autostart_command(), working_directory=settings.env_file.parent, log_directory=paths.logs, environment={"AIWM_ENV_FILE": str(settings.env_file)})
+        spec = AutostartSpec(
+            label=AUTOSTART_LABEL,
+            command=autostart_command(),
+            working_directory=settings.env_file.parent,
+            log_directory=paths.logs,
+            environment={"AIWM_ENV_FILE": str(settings.env_file)},
+        )
         print(f"Autostart installed: {platform.install_autostart(spec)}")
     elif args.action == "remove":
-        print("Autostart removed." if platform.remove_autostart(AUTOSTART_LABEL) else "Autostart was not installed.")
+        print(
+            "Autostart removed."
+            if platform.remove_autostart(AUTOSTART_LABEL)
+            else "Autostart was not installed."
+        )
     else:
         print("installed" if platform.is_autostart_installed(AUTOSTART_LABEL) else "not installed")
     return 0

@@ -31,19 +31,25 @@ class UserStateService:
         state = self.get()
         return state.condition if self.is_active(state) else None
 
-    def set(self, condition: str, source: str = "user", expires_in_minutes: int | None = None, actor: str = "user") -> UserState:
+    def set(
+        self, condition: str, source: str = "user", expires_in_minutes: int | None = None, actor: str = "user"
+    ) -> UserState:
         state = self.get()
         # An explicit user statement always wins over an AI estimate.
         if source != "user" and state.source == "user" and self.is_active(state):
             return state
         state.condition = condition.strip()
         state.source = source
-        state.expires_at = iso_in(minutes=expires_in_minutes) if expires_in_minutes else (
-            iso_in(hours=4) if source != "user" else None
+        state.expires_at = (
+            iso_in(minutes=expires_in_minutes)
+            if expires_in_minutes
+            else (iso_in(hours=4) if source != "user" else None)
         )
         state.updated_at = now_iso()
         self.session.flush()
-        AuditService(self.session).record("user_state.updated", "user_state", "current", actor, {"condition": condition, "source": source})
+        AuditService(self.session).record(
+            "user_state.updated", "user_state", "current", actor, {"condition": condition, "source": source}
+        )
         return state
 
     def clear(self) -> UserState:

@@ -149,13 +149,17 @@ class TaskService:
             "ai_activity": None,
             "open_chats": 0,
         }
-        plan_row = self.session.execute(
-            select(ExecutionPlan)
-            .join(RelatedPlanToTask, RelatedPlanToTask.execution_plan_id == ExecutionPlan.id)
-            .where(RelatedPlanToTask.task_id == task.id)
-            .where(ExecutionPlan.status.in_(["planned", "running", "reviewing"]))
-            .order_by(ExecutionPlan.created_at.desc())
-        ).scalars().first()
+        plan_row = (
+            self.session.execute(
+                select(ExecutionPlan)
+                .join(RelatedPlanToTask, RelatedPlanToTask.execution_plan_id == ExecutionPlan.id)
+                .where(RelatedPlanToTask.task_id == task.id)
+                .where(ExecutionPlan.status.in_(["planned", "running", "reviewing"]))
+                .order_by(ExecutionPlan.created_at.desc())
+            )
+            .scalars()
+            .first()
+        )
         if plan_row is not None:
             data["active_plan_id"] = plan_row.id
             if plan_row.status == "running":
@@ -164,7 +168,9 @@ class TaskService:
                     .where(WorkItem.execution_plan_id == plan_row.id, WorkItem.status == "running")
                     .limit(1)
                 ).scalar_one_or_none()
-                data["ai_activity"] = "資料作成中" if running and "作成" in (running.title or "") else "調査中"
+                data["ai_activity"] = (
+                    "資料作成中" if running and "作成" in (running.title or "") else "調査中"
+                )
             else:
                 data["ai_activity"] = ACTIVITY_LABELS.get(plan_row.status)
         if task.status == TaskStatus.REVIEW_PENDING:
@@ -179,7 +185,9 @@ class TaskService:
             ).scalar_one()
         )
         data["open_chats"] = int(
-            self.session.execute(select(func.count(TaskChat.id)).where(TaskChat.task_id == task.id)).scalar_one()
+            self.session.execute(
+                select(func.count(TaskChat.id)).where(TaskChat.task_id == task.id)
+            ).scalar_one()
         )
         return data
 
@@ -232,8 +240,12 @@ class TaskService:
         self._publish("task.updated", task)
         return task
 
-    def set_status(self, task_id: str, status: str, actor: str = Actor.SYSTEM, summary: str | None = None) -> Task:
-        return self.update(task_id, TaskUpdate(status=TaskStatus(status), change_summary=summary), actor=actor)
+    def set_status(
+        self, task_id: str, status: str, actor: str = Actor.SYSTEM, summary: str | None = None
+    ) -> Task:
+        return self.update(
+            task_id, TaskUpdate(status=TaskStatus(status), change_summary=summary), actor=actor
+        )
 
     def delete(self, task_id: str, actor: str = Actor.USER) -> Task:
         task = self.get(task_id)
@@ -262,7 +274,9 @@ class TaskService:
         task.status = TaskStatus.COMPLETED
         task.updated_at = now_iso()
         for artifact in self.session.execute(
-            select(TaskArtifact).where(TaskArtifact.task_id == task.id, TaskArtifact.status == "review_pending")
+            select(TaskArtifact).where(
+                TaskArtifact.task_id == task.id, TaskArtifact.status == "review_pending"
+            )
         ).scalars():
             artifact.status = "approved"
             artifact.updated_at = now_iso()
@@ -271,7 +285,9 @@ class TaskService:
         ).scalars():
             ctx.status = "resolved"
         self.session.flush()
-        self._add_version(task, previous=previous, actor=actor, summary="承認して完了" + (f": {comment}" if comment else ""))
+        self._add_version(
+            task, previous=previous, actor=actor, summary="承認して完了" + (f": {comment}" if comment else "")
+        )
         self.audit.record("task.approved", "task", task.id, actor, {"comment": comment})
         self._publish("task.updated", task)
         return task
@@ -282,12 +298,16 @@ class TaskService:
         task.status = TaskStatus.TODO
         task.updated_at = now_iso()
         self.session.flush()
-        self._add_version(task, previous=previous, actor=actor, summary="再オープン" + (f": {reason}" if reason else ""))
+        self._add_version(
+            task, previous=previous, actor=actor, summary="再オープン" + (f": {reason}" if reason else "")
+        )
         self.audit.record("task.reopened", "task", task.id, actor, {"reason": reason})
         self._publish("task.updated", task)
         return task
 
-    def request_revision(self, task_id: str, instructions: str, kind: str = "revision", actor: str = Actor.USER) -> Task:
+    def request_revision(
+        self, task_id: str, instructions: str, kind: str = "revision", actor: str = Actor.USER
+    ) -> Task:
         """User asks for changes / more research / hold on a review_pending task (SPEC 12.1)."""
         task = self.get(task_id)
         previous = snapshot(task)
@@ -305,14 +325,20 @@ class TaskService:
         task.status = new_status
         task.updated_at = now_iso()
         for artifact in self.session.execute(
-            select(TaskArtifact).where(TaskArtifact.task_id == task.id, TaskArtifact.status == "review_pending")
+            select(TaskArtifact).where(
+                TaskArtifact.task_id == task.id, TaskArtifact.status == "review_pending"
+            )
         ).scalars():
             artifact.status = "revision_requested"
             artifact.updated_at = now_iso()
         self.session.flush()
-        label = {"revision": "修正依頼", "additional_research": "追加調査依頼", "hold": "保留"}.get(kind, kind)
+        label = {"revision": "修正依頼", "additional_research": "追加調査依頼", "hold": "保留"}.get(
+            kind, kind
+        )
         self._add_version(task, previous=previous, actor=actor, summary=f"{label}: {instructions[:80]}")
-        self.audit.record("task.revision_requested", "task", task.id, actor, {"kind": kind, "instructions": instructions})
+        self.audit.record(
+            "task.revision_requested", "task", task.id, actor, {"kind": kind, "instructions": instructions}
+        )
         self._publish("task.updated", task)
         return task
 
@@ -345,7 +371,9 @@ class TaskService:
         self._publish("task.updated", task)
         return task
 
-    def add_context(self, task_id: str, context: str, source: str | None, actor: str = Actor.USER) -> TaskContext:
+    def add_context(
+        self, task_id: str, context: str, source: str | None, actor: str = Actor.USER
+    ) -> TaskContext:
         self.get(task_id)
         row = TaskContext(task_id=task_id, context=context, source=source)
         self.session.add(row)
@@ -363,7 +391,9 @@ class TaskService:
         )
 
     # --- internals ----------------------------------------------------
-    def _add_version(self, task: Task, previous: dict[str, Any] | None, actor: str, summary: str) -> TaskVersion:
+    def _add_version(
+        self, task: Task, previous: dict[str, Any] | None, actor: str, summary: str
+    ) -> TaskVersion:
         current = self.session.execute(
             select(func.max(TaskVersion.version)).where(TaskVersion.task_id == task.id)
         ).scalar_one()

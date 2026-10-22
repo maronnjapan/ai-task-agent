@@ -82,11 +82,18 @@ def result_to_text(result: Any) -> ToolResult:
         import json
 
         text = json.dumps(structured, ensure_ascii=False)
-    return ToolResult(text=text, is_error=bool(getattr(result, "is_error", False) or getattr(result, "isError", False)), structured=structured, raw=result)
+    return ToolResult(
+        text=text,
+        is_error=bool(getattr(result, "is_error", False) or getattr(result, "isError", False)),
+        structured=structured,
+        raw=result,
+    )
 
 
 class MCPClient:
-    def __init__(self, config: ConnectionConfig, auth: AuthStrategy | None = None, read_timeout: float | None = None):
+    def __init__(
+        self, config: ConnectionConfig, auth: AuthStrategy | None = None, read_timeout: float | None = None
+    ):
         self.config = config
         self.auth = auth or NoAuth()
         self.read_timeout = read_timeout or float(config.timeout_seconds)
@@ -158,7 +165,14 @@ class MCPClient:
         if use_cache and self._tools_cache is not None:
             return self._tools_cache
         result = await self._request(_Request(kind="list_tools"))
-        tools = [ToolInfo(name=t.name, description=t.description, input_schema=dict(getattr(t, "input_schema", None) or getattr(t, "inputSchema", {}) or {})) for t in result.tools]
+        tools = [
+            ToolInfo(
+                name=t.name,
+                description=t.description,
+                input_schema=dict(getattr(t, "input_schema", None) or getattr(t, "inputSchema", {}) or {}),
+            )
+            for t in result.tools
+        ]
         self._tools_cache = tools
         return tools
 
@@ -196,7 +210,10 @@ class MCPClient:
                 async with ClientSession(read, write, read_timeout_seconds=self.read_timeout) as session:
                     init = await session.initialize()
                     info = getattr(init, "server_info", None) or getattr(init, "serverInfo", None)
-                    self.server_info = {"name": getattr(info, "name", None), "version": getattr(info, "version", None)}
+                    self.server_info = {
+                        "name": getattr(info, "name", None),
+                        "version": getattr(info, "version", None),
+                    }
                     self.instructions = getattr(init, "instructions", None)
                     if not ready.done():
                         ready.set_result(True)

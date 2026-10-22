@@ -10,14 +10,17 @@ class TaskArtifact(Base):
     __tablename__ = "task_artifacts"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft','review_pending','approved','revision_requested')", name="ck_task_artifacts_status"
+            "status IN ('draft','review_pending','approved','revision_requested')",
+            name="ck_task_artifacts_status",
         ),
         Index("ix_task_artifacts_task", "task_id"),
     )
 
     id: Mapped[str] = id_column()
     task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
-    work_item_id: Mapped[str | None] = mapped_column(ForeignKey("work_items.id", ondelete="SET NULL"), nullable=True)
+    work_item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("work_items.id", ondelete="SET NULL"), nullable=True
+    )
     execution_plan_id: Mapped[str | None] = mapped_column(
         ForeignKey("execution_plans.id", ondelete="SET NULL"), nullable=True
     )
@@ -32,8 +35,12 @@ class TaskArtifact(Base):
     versions: Mapped[list[ArtifactVersion]] = relationship(
         back_populates="artifact", cascade="all, delete-orphan", order_by="ArtifactVersion.version"
     )
-    task_links: Mapped[list[ArtifactTaskLink]] = relationship(back_populates="artifact", cascade="all, delete-orphan")
-    sources: Mapped[list[ArtifactSource]] = relationship(back_populates="artifact", cascade="all, delete-orphan")
+    task_links: Mapped[list[ArtifactTaskLink]] = relationship(
+        back_populates="artifact", cascade="all, delete-orphan"
+    )
+    sources: Mapped[list[ArtifactSource]] = relationship(
+        back_populates="artifact", cascade="all, delete-orphan"
+    )
 
 
 class ArtifactVersion(Base):
@@ -41,7 +48,9 @@ class ArtifactVersion(Base):
     __table_args__ = (UniqueConstraint("artifact_id", "version", name="uq_artifact_versions_version"),)
 
     id: Mapped[str] = id_column()
-    artifact_id: Mapped[str] = mapped_column(ForeignKey("task_artifacts.id", ondelete="CASCADE"), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(
+        ForeignKey("task_artifacts.id", ondelete="CASCADE"), nullable=False
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     file_path: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False, default="ai")
@@ -54,7 +63,9 @@ class ArtifactVersion(Base):
 class ArtifactTaskLink(Base):
     __tablename__ = "artifact_task_links"
 
-    artifact_id: Mapped[str] = mapped_column(ForeignKey("task_artifacts.id", ondelete="CASCADE"), primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(
+        ForeignKey("task_artifacts.id", ondelete="CASCADE"), primary_key=True
+    )
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
 
     artifact: Mapped[TaskArtifact] = relationship(back_populates="task_links")

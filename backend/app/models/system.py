@@ -9,7 +9,9 @@ from app.models.base import Base, id_column, ts_column
 class ScheduledAction(Base):
     __tablename__ = "scheduled_actions"
     __table_args__ = (
-        CheckConstraint("status IN ('pending','running','done','cancelled')", name="ck_scheduled_actions_status"),
+        CheckConstraint(
+            "status IN ('pending','running','done','cancelled')", name="ck_scheduled_actions_status"
+        ),
         Index("ix_scheduled_actions_due", "status", "scheduled_at"),
     )
 
@@ -29,7 +31,9 @@ class ScheduledAction(Base):
 class ManagerSettings(Base):
     __tablename__ = "manager_settings"
     __table_args__ = (
-        CheckConstraint("autonomy_level IN ('conservative','balanced','proactive')", name="ck_manager_autonomy"),
+        CheckConstraint(
+            "autonomy_level IN ('conservative','balanced','proactive')", name="ck_manager_autonomy"
+        ),
         CheckConstraint("reminder_aggressiveness IN ('low','normal','high')", name="ck_manager_reminder"),
     )
 
@@ -119,7 +123,9 @@ class ApprovalRequest(Base):
 
     __tablename__ = "approval_requests"
     __table_args__ = (
-        CheckConstraint("status IN ('pending','approved','rejected','expired')", name="ck_approval_requests_status"),
+        CheckConstraint(
+            "status IN ('pending','approved','rejected','expired')", name="ck_approval_requests_status"
+        ),
         Index("ix_approval_requests_status", "status"),
     )
 
@@ -131,7 +137,9 @@ class ApprovalRequest(Base):
     tool_name: Mapped[str] = mapped_column(String, nullable=False)
     arguments: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON
     task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
-    work_item_id: Mapped[str | None] = mapped_column(ForeignKey("work_items.id", ondelete="SET NULL"), nullable=True)
+    work_item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("work_items.id", ondelete="SET NULL"), nullable=True
+    )
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     result: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -27,7 +27,14 @@ def make_ai_message(item: AIMessage | dict[str, Any]) -> AIMessage:
         return item
     tool_calls = []
     for call in item.get("tool_calls") or []:
-        tool_calls.append({"name": call["name"], "args": call.get("args") or {}, "id": call.get("id") or f"call_{new_id()[:8]}", "type": "tool_call"})
+        tool_calls.append(
+            {
+                "name": call["name"],
+                "args": call.get("args") or {},
+                "id": call.get("id") or f"call_{new_id()[:8]}",
+                "type": "tool_call",
+            }
+        )
     return AIMessage(content=item.get("content") or "", tool_calls=tool_calls)
 
 
@@ -48,7 +55,11 @@ class ScriptedChatModel(BaseChatModel):
     def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> ScriptedChatModel:  # type: ignore[override]
         names = []
         for tool in tools:
-            name = getattr(tool, "name", None) or (tool.get("name") if isinstance(tool, dict) else None) or getattr(tool, "__name__", "tool")
+            name = (
+                getattr(tool, "name", None)
+                or (tool.get("name") if isinstance(tool, dict) else None)
+                or getattr(tool, "__name__", "tool")
+            )
             names.append(str(name))
         self.bound_tools = names
         return self

@@ -5,7 +5,13 @@ from __future__ import annotations
 from app.integrations.mcp.config import ConnectionConfig
 from app.models import MCPConnection, TaskArtifact, WorkItem
 from app.schemas.artifacts import ArtifactOut, ArtifactSourceOut
-from app.schemas.execution import ExecutionPlanOut, PlanTaskLinkOut, ReviewOut, ReviewTaskResultOut, WorkItemOut
+from app.schemas.execution import (
+    ExecutionPlanOut,
+    PlanTaskLinkOut,
+    ReviewOut,
+    ReviewTaskResultOut,
+    WorkItemOut,
+)
 from app.schemas.integrations import IntegrationOut, ToolPermissionOut
 from app.schemas.tasks import TaskOut
 from app.services.artifact_service import ArtifactService
@@ -43,7 +49,14 @@ def plan_out(service: ExecutionService, plan, session) -> ExecutionPlanOut:
     links = []
     for link in plan.task_links:
         task = session.get(Task, link.task_id)
-        links.append(PlanTaskLinkOut(task_id=link.task_id, execution_plan_id=link.execution_plan_id, acceptance_criteria=link.acceptance_criteria, task_title=task.title if task else None))
+        links.append(
+            PlanTaskLinkOut(
+                task_id=link.task_id,
+                execution_plan_id=link.execution_plan_id,
+                acceptance_criteria=link.acceptance_criteria,
+                task_title=task.title if task else None,
+            )
+        )
     return ExecutionPlanOut(
         id=plan.id,
         parent_plan_id=plan.parent_plan_id,

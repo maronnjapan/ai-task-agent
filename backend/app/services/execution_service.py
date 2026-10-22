@@ -69,7 +69,9 @@ def topological_order(items: list[WorkItem], deps: dict[str, set[str]]) -> list[
             if prereq in by_id and item_id in by_id:
                 indegree[item_id] += 1
                 dependents[prereq].append(item_id)
-    ready = sorted([i for i, d in indegree.items() if d == 0], key=lambda i: (by_id[i].order_index, by_id[i].created_at))
+    ready = sorted(
+        [i for i, d in indegree.items() if d == 0], key=lambda i: (by_id[i].order_index, by_id[i].created_at)
+    )
     ordered: list[WorkItem] = []
     while ready:
         current = ready.pop(0)
@@ -97,20 +99,30 @@ class ExecutionService:
             raise NotFoundError("Execution plan not found")
         return plan
 
-    def list_plans(self, status: str | None = None, task_id: str | None = None, limit: int = 50, offset: int = 0) -> tuple[list[ExecutionPlan], int]:
+    def list_plans(
+        self, status: str | None = None, task_id: str | None = None, limit: int = 50, offset: int = 0
+    ) -> tuple[list[ExecutionPlan], int]:
         stmt = select(ExecutionPlan)
         if status:
             stmt = stmt.where(ExecutionPlan.status.in_([s for s in status.split(",") if s]))
         if task_id:
-            stmt = stmt.join(RelatedPlanToTask, RelatedPlanToTask.execution_plan_id == ExecutionPlan.id).where(RelatedPlanToTask.task_id == task_id)
+            stmt = stmt.join(
+                RelatedPlanToTask, RelatedPlanToTask.execution_plan_id == ExecutionPlan.id
+            ).where(RelatedPlanToTask.task_id == task_id)
         total = self.session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
-        rows = self.session.execute(stmt.order_by(ExecutionPlan.created_at.desc()).limit(limit).offset(offset)).scalars().all()
+        rows = (
+            self.session.execute(stmt.order_by(ExecutionPlan.created_at.desc()).limit(limit).offset(offset))
+            .scalars()
+            .all()
+        )
         return list(rows), int(total)
 
     def active_plans(self) -> list[ExecutionPlan]:
         return list(
             self.session.execute(
-                select(ExecutionPlan).where(ExecutionPlan.status.in_([str(s) for s in ACTIVE_PLAN_STATUSES])).order_by(ExecutionPlan.created_at)
+                select(ExecutionPlan)
+                .where(ExecutionPlan.status.in_([str(s) for s in ACTIVE_PLAN_STATUSES]))
+                .order_by(ExecutionPlan.created_at)
             ).scalars()
         )
 
@@ -157,12 +169,20 @@ class ExecutionService:
         self.session.flush()
         for task_id in task_ids:
             self.session.add(
-                RelatedPlanToTask(task_id=task_id, execution_plan_id=plan.id, acceptance_criteria=(task_acceptance or {}).get(task_id))
+                RelatedPlanToTask(
+                    task_id=task_id,
+                    execution_plan_id=plan.id,
+                    acceptance_criteria=(task_acceptance or {}).get(task_id),
+                )
             )
         self.session.flush()
-        self.audit.record("plan.created", "execution_plan", plan.id, actor, {"tasks": task_ids, "parent": parent_plan_id})
+        self.audit.record(
+            "plan.created", "execution_plan", plan.id, actor, {"tasks": task_ids, "parent": parent_plan_id}
+        )
         if self.broker:
-            self.broker.publish("plan.created", {"plan_id": plan.id, "task_ids": task_ids, "parent_plan_id": parent_plan_id})
+            self.broker.publish(
+                "plan.created", {"plan_id": plan.id, "task_ids": task_ids, "parent_plan_id": parent_plan_id}
+            )
         return plan
 
     def set_plan_status(self, plan_id: str, status: str, actor: str = "system") -> ExecutionPlan:
@@ -186,7 +206,9 @@ class ExecutionService:
         while current is not None and current.id not in seen:
             chain.append(current)
             seen.add(current.id)
-            current = self.session.get(ExecutionPlan, current.parent_plan_id) if current.parent_plan_id else None
+            current = (
+                self.session.get(ExecutionPlan, current.parent_plan_id) if current.parent_plan_id else None
+            )
         chain.reverse()
         return chain
 
@@ -201,7 +223,9 @@ class ExecutionService:
         self.get_plan(plan_id)
         return list(
             self.session.execute(
-                select(WorkItem).where(WorkItem.execution_plan_id == plan_id).order_by(WorkItem.order_index, WorkItem.created_at)
+                select(WorkItem)
+                .where(WorkItem.execution_plan_id == plan_id)
+                .order_by(WorkItem.order_index, WorkItem.created_at)
             ).scalars()
         )
 
@@ -211,12 +235,16 @@ class ExecutionService:
         deps: dict[str, set[str]] = {item.id: set() for item in items}
         if not ids:
             return deps
-        rows = self.session.execute(select(WorkItemDependency).where(WorkItemDependency.work_item_id.in_(ids))).scalars()
+        rows = self.session.execute(
+            select(WorkItemDependency).where(WorkItemDependency.work_item_id.in_(ids))
+        ).scalars()
         for row in rows:
             deps[row.work_item_id].add(row.depends_on_work_item_id)
         return deps
 
-    def create_work_items(self, plan_id: str, items: list[dict[str, Any]], actor: str = "ai") -> list[WorkItem]:
+    def create_work_items(
+        self, plan_id: str, items: list[dict[str, Any]], actor: str = "ai"
+    ) -> list[WorkItem]:
         """Create work items. ``depends_on`` may reference other items by index or title in the same batch,
         or by id for existing items of the plan."""
         plan = self.get_plan(plan_id)
@@ -230,7 +258,12 @@ class ExecutionService:
             title = str(spec.get("title") or "").strip() or description[:80]
             if not description:
                 raise ValidationError("Work item description is required")
-            item = WorkItem(execution_plan_id=plan.id, title=title[:200], description=description, order_index=base_index + offset)
+            item = WorkItem(
+                execution_plan_id=plan.id,
+                title=title[:200],
+                description=description,
+                order_index=base_index + offset,
+            )
             self.session.add(item)
             created.append(item)
         self.session.flush()
@@ -305,9 +338,18 @@ class ExecutionService:
             for item in items:
                 if status[item.id] != WorkItemStatus.PENDING:
                     continue
-                if any(status.get(d) in (WorkItemStatus.FAILED, WorkItemStatus.BLOCKED, WorkItemStatus.SKIPPED) for d in deps.get(item.id, ())):
+                if any(
+                    status.get(d) in (WorkItemStatus.FAILED, WorkItemStatus.BLOCKED, WorkItemStatus.SKIPPED)
+                    for d in deps.get(item.id, ())
+                ):
                     item.status = WorkItemStatus.BLOCKED
-                    item.result = dumps({"status": "blocked", "summary": "前提となる作業が失敗したため実行できません", "blockers": ["dependency_failed"]})
+                    item.result = dumps(
+                        {
+                            "status": "blocked",
+                            "summary": "前提となる作業が失敗したため実行できません",
+                            "blockers": ["dependency_failed"],
+                        }
+                    )
                     item.updated_at = now_iso()
                     status[item.id] = WorkItemStatus.BLOCKED
                     blocked.append(item)
@@ -315,7 +357,9 @@ class ExecutionService:
         self.session.flush()
         return blocked
 
-    def set_work_item_status(self, work_item_id: str, status: str, result: dict[str, Any] | None = None) -> WorkItem:
+    def set_work_item_status(
+        self, work_item_id: str, status: str, result: dict[str, Any] | None = None
+    ) -> WorkItem:
         item = self.get_work_item(work_item_id)
         item.status = str(WorkItemStatus(status))
         if result is not None:
@@ -323,7 +367,10 @@ class ExecutionService:
         item.updated_at = now_iso()
         self.session.flush()
         if self.broker:
-            self.broker.publish("work_item.updated", {"work_item_id": item.id, "plan_id": item.execution_plan_id, "status": item.status})
+            self.broker.publish(
+                "work_item.updated",
+                {"work_item_id": item.id, "plan_id": item.execution_plan_id, "status": item.status},
+            )
         return item
 
     def work_item_results(self, plan_id: str) -> list[dict[str, Any]]:
@@ -368,12 +415,28 @@ class ExecutionService:
         )
         self.session.add(run)
         self.session.flush()
-        self.audit.record("agent_run.started", "agent_run", run.id, "ai", {"agent_type": agent_type, "model": model, "plan_id": execution_plan_id})
+        self.audit.record(
+            "agent_run.started",
+            "agent_run",
+            run.id,
+            "ai",
+            {"agent_type": agent_type, "model": model, "plan_id": execution_plan_id},
+        )
         if self.broker:
-            self.broker.publish("agent_run.started", {"run_id": run.id, "agent_type": agent_type, "plan_id": execution_plan_id, "work_item_id": work_item_id})
+            self.broker.publish(
+                "agent_run.started",
+                {
+                    "run_id": run.id,
+                    "agent_type": agent_type,
+                    "plan_id": execution_plan_id,
+                    "work_item_id": work_item_id,
+                },
+            )
         return run
 
-    def finish_run(self, run_id: str, status: str, result_summary: str | None = None, error_message: str | None = None) -> AgentRun:
+    def finish_run(
+        self, run_id: str, status: str, result_summary: str | None = None, error_message: str | None = None
+    ) -> AgentRun:
         run = self.session.get(AgentRun, run_id)
         if run is None:
             raise NotFoundError("Agent run not found")
@@ -382,12 +445,29 @@ class ExecutionService:
         run.error_message = error_message
         run.finished_at = now_iso()
         self.session.flush()
-        self.audit.record("agent_run.finished", "agent_run", run.id, "ai", {"status": run.status, "error": error_message})
+        self.audit.record(
+            "agent_run.finished", "agent_run", run.id, "ai", {"status": run.status, "error": error_message}
+        )
         if self.broker:
-            self.broker.publish("agent_run.finished", {"run_id": run.id, "agent_type": run.agent_type, "status": run.status, "plan_id": run.execution_plan_id})
+            self.broker.publish(
+                "agent_run.finished",
+                {
+                    "run_id": run.id,
+                    "agent_type": run.agent_type,
+                    "status": run.status,
+                    "plan_id": run.execution_plan_id,
+                },
+            )
         return run
 
-    def list_runs(self, plan_id: str | None = None, agent_type: str | None = None, task_id: str | None = None, limit: int = 50, offset: int = 0) -> tuple[list[AgentRun], int]:
+    def list_runs(
+        self,
+        plan_id: str | None = None,
+        agent_type: str | None = None,
+        task_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[AgentRun], int]:
         stmt = select(AgentRun)
         if plan_id:
             stmt = stmt.where(AgentRun.execution_plan_id == plan_id)
@@ -397,18 +477,28 @@ class ExecutionService:
             plan_ids = select(RelatedPlanToTask.execution_plan_id).where(RelatedPlanToTask.task_id == task_id)
             stmt = stmt.where(AgentRun.execution_plan_id.in_(plan_ids))
         total = self.session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
-        rows = self.session.execute(stmt.order_by(AgentRun.started_at.desc()).limit(limit).offset(offset)).scalars().all()
+        rows = (
+            self.session.execute(stmt.order_by(AgentRun.started_at.desc()).limit(limit).offset(offset))
+            .scalars()
+            .all()
+        )
         return list(rows), int(total)
 
     def running_runs(self) -> list[AgentRun]:
-        return list(self.session.execute(select(AgentRun).where(AgentRun.status == RunStatus.RUNNING)).scalars())
+        return list(
+            self.session.execute(select(AgentRun).where(AgentRun.status == RunStatus.RUNNING)).scalars()
+        )
 
     # --- reviews ------------------------------------------------------
-    def record_review(self, plan_id: str, run_id: str, status: str, feedback: str, task_results: list[dict[str, Any]]) -> Review:
+    def record_review(
+        self, plan_id: str, run_id: str, status: str, feedback: str, task_results: list[dict[str, Any]]
+    ) -> Review:
         plan = self.get_plan(plan_id)
         plan_tasks = set(self.plan_task_ids(plan_id))
         status = str(ReviewStatus(status))
-        review = Review(execution_plan_id=plan.id, agent_run_id=run_id, status=status, feedback=feedback or "")
+        review = Review(
+            execution_plan_id=plan.id, agent_run_id=run_id, status=status, feedback=feedback or ""
+        )
         self.session.add(review)
         self.session.flush()
         seen: set[str] = set()
@@ -420,19 +510,34 @@ class ExecutionService:
                 continue
             seen.add(task_id)
             self.session.add(
-                ReviewTaskResult(review_id=review.id, task_id=task_id, status=str(ReviewStatus(entry.get("status", status))), feedback=entry.get("feedback"))
+                ReviewTaskResult(
+                    review_id=review.id,
+                    task_id=task_id,
+                    status=str(ReviewStatus(entry.get("status", status))),
+                    feedback=entry.get("feedback"),
+                )
             )
         for task_id in plan_tasks - seen:
-            self.session.add(ReviewTaskResult(review_id=review.id, task_id=task_id, status=status, feedback=None))
+            self.session.add(
+                ReviewTaskResult(review_id=review.id, task_id=task_id, status=status, feedback=None)
+            )
         self.session.flush()
-        self.audit.record("review.recorded", "review", review.id, "ai", {"plan_id": plan_id, "status": status})
+        self.audit.record(
+            "review.recorded", "review", review.id, "ai", {"plan_id": plan_id, "status": status}
+        )
         if self.broker:
-            self.broker.publish("review.recorded", {"review_id": review.id, "plan_id": plan_id, "status": status})
+            self.broker.publish(
+                "review.recorded", {"review_id": review.id, "plan_id": plan_id, "status": status}
+            )
         return review
 
     def list_reviews(self, plan_id: str) -> list[Review]:
         self.get_plan(plan_id)
-        return list(self.session.execute(select(Review).where(Review.execution_plan_id == plan_id).order_by(Review.created_at.desc())).scalars())
+        return list(
+            self.session.execute(
+                select(Review).where(Review.execution_plan_id == plan_id).order_by(Review.created_at.desc())
+            ).scalars()
+        )
 
     def latest_review(self, plan_id: str) -> Review | None:
         reviews = self.list_reviews(plan_id)

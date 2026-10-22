@@ -64,7 +64,9 @@ class SettingsService:
                 max_retries=s.llm_max_retries,
             )
 
-        return LLMSettings(manager=agent(s.manager_model), worker=agent(s.worker_model), review=agent(s.review_model))
+        return LLMSettings(
+            manager=agent(s.manager_model), worker=agent(s.worker_model), review=agent(s.review_model)
+        )
 
     def get_llm(self) -> LLMSettings:
         raw = self.get_raw("llm") or {}
@@ -90,9 +92,13 @@ class SettingsService:
             autonomy_level=row.autonomy_level,
             reminder_aggressiveness=row.reminder_aggressiveness,
             reevaluation_interval_minutes=int(
-                limits.get("reevaluation_interval_minutes", self.settings.manager_reevaluation_interval_minutes)
+                limits.get(
+                    "reevaluation_interval_minutes", self.settings.manager_reevaluation_interval_minutes
+                )
             ),
-            max_replanning_attempts=int(limits.get("max_replanning_attempts", self.settings.max_replanning_attempts)),
+            max_replanning_attempts=int(
+                limits.get("max_replanning_attempts", self.settings.max_replanning_attempts)
+            ),
             max_worker_retries=int(limits.get("max_worker_retries", self.settings.max_worker_retries)),
             max_consecutive_no_progress=int(
                 limits.get("max_consecutive_no_progress", self.settings.max_consecutive_no_progress)

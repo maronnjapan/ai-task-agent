@@ -64,7 +64,9 @@ def configure_logging(log_dir: Path | None, level: str = "INFO") -> logging.Logg
     root.addHandler(console)
     if log_dir is not None:
         log_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = RotatingFileHandler(log_dir / "app.log", maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
+        file_handler = RotatingFileHandler(
+            log_dir / "app.log", maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+        )
         file_handler.setFormatter(formatter)
         file_handler.addFilter(SecretRedactingFilter())
         file_handler._aiwm = True  # type: ignore[attr-defined]

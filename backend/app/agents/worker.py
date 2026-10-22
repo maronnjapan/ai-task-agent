@@ -48,7 +48,14 @@ class WorkerAgent(AgentRunnerBase):
         return prompt
 
     async def run(self, plan_id: str, work_item_id: str, run_id: str | None = None) -> WorkerResult:
-        ctx = AgentContext(app=self.app, agent_type="worker", run_id=run_id, plan_id=plan_id, work_item_id=work_item_id, mode="run")
+        ctx = AgentContext(
+            app=self.app,
+            agent_type="worker",
+            run_id=run_id,
+            plan_id=plan_id,
+            work_item_id=work_item_id,
+            mode="run",
+        )
         with self.app.db.session() as session:
             context = build_execution_context(ctx, session)
             ctx.task_ids = [t["id"] for t in context.get("tasks", [])]
@@ -59,7 +66,11 @@ class WorkerAgent(AgentRunnerBase):
             except Exception:  # noqa: BLE001
                 log.exception("failed to load MCP tools")
         tools = build_worker_tools(ctx, mcp_tools=mcp_tools)
-        prompt = "## 作業コンテキスト\n" + dumps(context) + "\n\n上記の Work Item を実行し、最後に report_work_result を呼んでください。"
+        prompt = (
+            "## 作業コンテキスト\n"
+            + dumps(context)
+            + "\n\n上記の Work Item を実行し、最後に report_work_result を呼んでください。"
+        )
         outcome = await self.invoke(self.system_prompt(), prompt, tools)
         result = result_from_recorder(ctx, outcome.text)
         return WorkerResult(

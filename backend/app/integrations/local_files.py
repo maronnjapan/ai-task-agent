@@ -42,7 +42,11 @@ class LocalFileSource:
             if not root.exists():
                 continue
             for dirpath, dirnames, filenames in os.walk(root):
-                dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".venv", "venv")]
+                dirnames[:] = [
+                    d
+                    for d in dirnames
+                    if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".venv", "venv")
+                ]
                 for name in filenames:
                     path = Path(dirpath) / name
                     if path.suffix.lower() in self.extensions:
@@ -81,10 +85,14 @@ class LocalFileSource:
     def read(self, path: str, max_chars: int = 20_000) -> str:
         target = Path(path).expanduser()
         if not self.is_allowed(target):
-            raise LocalFileAccessError(f"Access to {path} is not allowed (outside configured directories or extension not permitted)")
+            raise LocalFileAccessError(
+                f"Access to {path} is not allowed (outside configured directories or extension not permitted)"
+            )
         if not target.exists() or not target.is_file():
             raise FileNotFoundError(path)
         if target.stat().st_size > self.max_bytes:
-            raise LocalFileAccessError(f"File exceeds the configured size limit ({self.settings.max_file_size_kb} KB)")
+            raise LocalFileAccessError(
+                f"File exceeds the configured size limit ({self.settings.max_file_size_kb} KB)"
+            )
         text = target.read_text(encoding="utf-8", errors="ignore")
         return text[:max_chars]

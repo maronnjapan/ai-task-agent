@@ -24,7 +24,12 @@ def make_tasks(ctx: AppContext, *titles: str, assignee: str = "ai") -> list[str]
     return ids
 
 
-def plan_script(task_ids: list[str], items: list[dict], objective: str = "まとめて調査する", text: str = "計画を作成しました"):
+def plan_script(
+    task_ids: list[str],
+    items: list[dict],
+    objective: str = "まとめて調査する",
+    text: str = "計画を作成しました",
+):
     """Manager script: create a plan for ``task_ids`` then its work items."""
 
     def create_items(messages):
@@ -32,24 +37,63 @@ def plan_script(task_ids: list[str], items: list[dict], objective: str = "まと
         return tool_call("create_work_items", plan_id=plan_id, items=items)
 
     return [
-        tool_call("create_execution_plan", objective=objective, acceptance_criteria="各タスクのレポートが Markdown で存在する", task_ids=task_ids, task_acceptance_criteria={t: f"{t[:4]} のレポート" for t in task_ids}),
+        tool_call(
+            "create_execution_plan",
+            objective=objective,
+            acceptance_criteria="各タスクのレポートが Markdown で存在する",
+            task_ids=task_ids,
+            task_acceptance_criteria={t: f"{t[:4]} のレポート" for t in task_ids},
+        ),
         create_items,
         {"content": text},
     ]
 
 
-def worker_success(title: str = "調査レポート", content: str = "# レポート\n\n調査結果", with_artifact: bool = True):
+def worker_success(
+    title: str = "調査レポート", content: str = "# レポート\n\n調査結果", with_artifact: bool = True
+):
     script = []
     if with_artifact:
-        script.append(tool_call("create_markdown_artifact", title=title, content=content, sources=[{"title": "spec", "reference": "https://example.com/spec", "source_type": "web"}]))
-    script.append(tool_call("report_work_result", status="succeeded", summary=f"{title} を作成", sources=[{"title": "spec", "reference": "https://example.com/spec"}]))
+        script.append(
+            tool_call(
+                "create_markdown_artifact",
+                title=title,
+                content=content,
+                sources=[{"title": "spec", "reference": "https://example.com/spec", "source_type": "web"}],
+            )
+        )
+    script.append(
+        tool_call(
+            "report_work_result",
+            status="succeeded",
+            summary=f"{title} を作成",
+            sources=[{"title": "spec", "reference": "https://example.com/spec"}],
+        )
+    )
     script.append({"content": "完了"})
     return script
 
 
-def review_script(results: dict[str, str], status: str | None = None, feedback: str = "完了条件を満たしています"):
-    overall = status or ("passed" if all(v == "passed" for v in results.values()) else ("blocked" if any(v == "blocked" for v in results.values()) else "failed"))
-    return [tool_call("submit_review", status=overall, feedback=feedback, task_results=[{"task_id": t, "status": s, "feedback": None if s == "passed" else feedback} for t, s in results.items()]), {"content": "レビュー完了"}]
+def review_script(
+    results: dict[str, str], status: str | None = None, feedback: str = "完了条件を満たしています"
+):
+    overall = status or (
+        "passed"
+        if all(v == "passed" for v in results.values())
+        else ("blocked" if any(v == "blocked" for v in results.values()) else "failed")
+    )
+    return [
+        tool_call(
+            "submit_review",
+            status=overall,
+            feedback=feedback,
+            task_results=[
+                {"task_id": t, "status": s, "feedback": None if s == "passed" else feedback}
+                for t, s in results.items()
+            ],
+        ),
+        {"content": "レビュー完了"},
+    ]
 
 
 def orchestrator(ctx: AppContext) -> Orchestrator:
@@ -69,12 +113,21 @@ def notifications(ctx: AppContext) -> list[Notification]:
 @pytest.mark.asyncio
 async def test_full_cycle_multi_task_plan_passes_and_waits_for_user(ctx: AppContext, models):
     a, b = make_tasks(ctx, "OIDC 仕様調査", "PKCE 導入検討")
-    models["manager"].push(*plan_script([a, b], [
-        {"title": "OIDC 調査", "description": "OIDC の仕様を調べる"},
-        {"title": "PKCE 調査", "description": "PKCE を調べる"},
-        {"title": "統合レポート", "description": "両方をまとめる", "depends_on": [0, 1]},
-    ]))
-    models["worker"].push(*worker_success("OIDC レポート"), *worker_success("PKCE レポート"), *worker_success("統合", with_artifact=False))
+    models["manager"].push(
+        *plan_script(
+            [a, b],
+            [
+                {"title": "OIDC 調査", "description": "OIDC の仕様を調べる"},
+                {"title": "PKCE 調査", "description": "PKCE を調べる"},
+                {"title": "統合レポート", "description": "両方をまとめる", "depends_on": [0, 1]},
+            ],
+        )
+    )
+    models["worker"].push(
+        *worker_success("OIDC レポート"),
+        *worker_success("PKCE レポート"),
+        *worker_success("統合", with_artifact=False),
+    )
     models["review"].push(*review_script({a: "passed", b: "passed"}))
     orch = orchestrator(ctx)
     await orch.run_cycle([Trigger("manual_run")])
@@ -87,13 +140,19 @@ async def test_full_cycle_multi_task_plan_passes_and_waits_for_user(ctx: AppCont
         items = exec_service.ordered_work_items(plans[0].id)
         assert [i.status for i in items] == ["succeeded"] * 3
         # dependency order respected: worker runs happened in topological order
-        runs = [r for r in s.execute(select(AgentRun).order_by(AgentRun.started_at)).scalars() if r.agent_type == "worker"]
+        runs = [
+            r
+            for r in s.execute(select(AgentRun).order_by(AgentRun.started_at)).scalars()
+            if r.agent_type == "worker"
+        ]
         assert [r.work_item_id for r in runs] == [i.id for i in items]
         assert all(r.status == "succeeded" and r.model == "fake:scripted" for r in runs)
         artifacts = ArtifactService(s, orch.store).list_for_plan(plans[0].id)
         assert len(artifacts) == 2 and all(x.status == "review_pending" for x in artifacts)
         assert artifacts[0].sources[0].reference == "https://example.com/spec"
-        assert {x.id for x in ArtifactService(s, orch.store).list_for_task(b)} == {x.id for x in artifacts}  # shared plan artifacts visible from both tasks
+        assert {x.id for x in ArtifactService(s, orch.store).list_for_task(b)} == {
+            x.id for x in artifacts
+        }  # shared plan artifacts visible from both tasks
         review = exec_service.latest_review(plans[0].id)
         assert review.status == "passed" and {r.task_id for r in review.task_results} == {a, b}
     assert any(n.title == "成果物の確認をお願いします" for n in notifications(ctx))
@@ -109,7 +168,9 @@ async def test_full_cycle_multi_task_plan_passes_and_waits_for_user(ctx: AppCont
     with ctx.db.session() as s:
         TaskService(s, ctx.broker).approve(a)
         assert TaskService(s).get(a).status == "completed"
-        assert all(x.status == "approved" for x in ArtifactService(s, orch.store).list_for_task(a) if x.task_id == a)
+        assert all(
+            x.status == "approved" for x in ArtifactService(s, orch.store).list_for_task(a) if x.task_id == a
+        )
 
 
 @pytest.mark.asyncio
@@ -119,7 +180,11 @@ async def test_review_failure_triggers_replanning_for_failed_task_only(ctx: AppC
     models["worker"].push(*worker_success("初回レポート"))
     models["review"].push(*review_script({a: "passed", b: "failed"}, feedback="B の比較表が不足"))
     # replanning script: only the failed task, parent filled automatically
-    models["manager"].push(*plan_script([b], [{"title": "比較表作成", "description": "B の比較表を追加する"}], objective="不足分の補完"))
+    models["manager"].push(
+        *plan_script(
+            [b], [{"title": "比較表作成", "description": "B の比較表を追加する"}], objective="不足分の補完"
+        )
+    )
     models["worker"].push(*worker_success("比較表"))
     models["review"].push(*review_script({b: "passed"}))
     orch = orchestrator(ctx)
@@ -180,7 +245,9 @@ async def test_replan_without_new_plan_stops_work(ctx: AppContext, models):
 async def test_worker_retry_then_success(ctx: AppContext, models):
     (a,) = make_tasks(ctx, "再試行")
     models["manager"].push(*plan_script([a], [{"title": "w", "description": "w"}]))
-    models["worker"].push(tool_call("report_work_result", status="failed", summary="一時的なエラー"), {"content": "失敗"})
+    models["worker"].push(
+        tool_call("report_work_result", status="failed", summary="一時的なエラー"), {"content": "失敗"}
+    )
     models["worker"].push(*worker_success())
     models["review"].push(*review_script({a: "passed"}))
     await orchestrator(ctx).run_cycle([Trigger("manual_run")])
@@ -189,7 +256,9 @@ async def test_worker_retry_then_success(ctx: AppContext, models):
         item = ExecutionService(s).list_work_items(plans[0].id)[0]
         assert item.status == "succeeded" and item.retry_count == 1
         worker_runs = [r for r in s.execute(select(AgentRun)).scalars() if r.agent_type == "worker"]
-        assert len(worker_runs) == 2 and worker_runs[0].status == "failed" or worker_runs[1].status == "failed"
+        assert (
+            len(worker_runs) == 2 and worker_runs[0].status == "failed" or worker_runs[1].status == "failed"
+        )
     assert task_status(ctx, a) == "review_pending"
 
 
@@ -234,7 +303,9 @@ async def test_blocked_review_requests_user_input(ctx: AppContext, models):
 @pytest.mark.asyncio
 async def test_no_progress_limit_stops_reevaluation(ctx: AppContext, models):
     make_tasks(ctx, "何もしない")
-    models["manager"].push({"content": "何もしません"}, {"content": "まだ何もしません"}, {"content": "呼ばれないはず"})
+    models["manager"].push(
+        {"content": "何もしません"}, {"content": "まだ何もしません"}, {"content": "呼ばれないはず"}
+    )
     orch = orchestrator(ctx)
     await orch.run_cycle([Trigger("reevaluate")])
     await orch.run_cycle([Trigger("reevaluate")])
@@ -258,13 +329,31 @@ async def test_manager_tools_enforce_rules(ctx: AppContext):
         TaskService(s).update(user_task, TaskUpdate(assignee="user"))
     agent_ctx = AgentContext(app=ctx, agent_type="manager", mode="evaluate")
     tools = {t.name: t for t in build_manager_tools(agent_ctx)}
-    assert tools["create_execution_plan"].invoke({"objective": "o", "acceptance_criteria": "c", "task_ids": [user_task]}).startswith("error")
-    first = tools["create_execution_plan"].invoke({"objective": "o", "acceptance_criteria": "c", "task_ids": [ai_task]})
+    assert (
+        tools["create_execution_plan"]
+        .invoke({"objective": "o", "acceptance_criteria": "c", "task_ids": [user_task]})
+        .startswith("error")
+    )
+    first = tools["create_execution_plan"].invoke(
+        {"objective": "o", "acceptance_criteria": "c", "task_ids": [ai_task]}
+    )
     assert "plan_id" in first
-    assert "already has an active plan" in tools["create_execution_plan"].invoke({"objective": "o2", "acceptance_criteria": "c", "task_ids": [ai_task]})
+    assert "already has an active plan" in tools["create_execution_plan"].invoke(
+        {"objective": "o2", "acceptance_criteria": "c", "task_ids": [ai_task]}
+    )
     assert tools["update_task"].invoke({"task_id": ai_task, "status": "completed"}).startswith("error")
-    assert tools["record_decision"].invoke({"task_id": ai_task, "content": "x"}).startswith("error")  # not in instruction mode
-    assert "cycle" in tools["create_work_items"].invoke({"plan_id": __import__("json").loads(first)["plan_id"], "items": [{"title": "a", "description": "a", "depends_on": [1]}, {"title": "b", "description": "b", "depends_on": [0]}]})
+    assert (
+        tools["record_decision"].invoke({"task_id": ai_task, "content": "x"}).startswith("error")
+    )  # not in instruction mode
+    assert "cycle" in tools["create_work_items"].invoke(
+        {
+            "plan_id": __import__("json").loads(first)["plan_id"],
+            "items": [
+                {"title": "a", "description": "a", "depends_on": [1]},
+                {"title": "b", "description": "b", "depends_on": [0]},
+            ],
+        }
+    )
     assert task_status(ctx, ai_task) == "in_progress"
     scheduled = tools["schedule_action"].invoke({"action_type": "manager_reevaluate", "delay_minutes": 30})
     assert "manager_reevaluate" in scheduled
@@ -281,7 +370,9 @@ async def test_one_shot_instruction_persists_changes(ctx: AppContext, models):
         {"content": "タスクを作成し、決定事項を記録しました"},
     )
     orch = orchestrator(ctx)
-    result = await orch.run_instruction("週報タスクを作って。週報は Markdown で提出することに決めた。", [existing])
+    result = await orch.run_instruction(
+        "週報タスクを作って。週報は Markdown で提出することに決めた。", [existing]
+    )
     assert result.created_task_ids and result.decision_ids and "決定事項" in result.text
     with ctx.db.session() as s:
         created = TaskService(s).get(result.created_task_ids[0])
@@ -357,7 +448,10 @@ async def test_chat_reply_uses_context_and_tools(ctx: AppContext, models):
         chat = ChatService(s).create_chat(a)
         ChatService(s).add_message(chat.id, "疲れているので軽めの作業にしたい。Python のバージョンは？")
         chat_id = chat.id
-    models["manager"].push(tool_call("estimate_user_state", condition="疲れている"), {"content": "決定事項により Python 3.12 です。軽めの作業から進めましょう。"})
+    models["manager"].push(
+        tool_call("estimate_user_state", condition="疲れている"),
+        {"content": "決定事項により Python 3.12 です。軽めの作業から進めましょう。"},
+    )
     text = await ChatAgent(ctx).reply(chat_id)
     assert "3.12" in text
     with ctx.db.session() as s:

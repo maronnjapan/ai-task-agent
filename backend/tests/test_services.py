@@ -27,7 +27,9 @@ def test_task_crud_and_versions(ctx: AppContext):
         service = TaskService(s, ctx.broker)
         task = service.create(TaskCreate(title="OIDC調査", description="仕様を調べる", category_id=cat.id))
         assert task.status == "todo" and task.assignee == "shared"
-        service.update(task.id, TaskUpdate(title="OIDC調査（改）", due_at="2030-01-01T00:00:00+00:00"), actor="ai")
+        service.update(
+            task.id, TaskUpdate(title="OIDC調査（改）", due_at="2030-01-01T00:00:00+00:00"), actor="ai"
+        )
         service.update(task.id, TaskUpdate(clear=["due_at"]))
         history = service.history(task.id)
         assert [v.version for v in history] == [3, 2, 1]
@@ -118,8 +120,12 @@ def test_memory_scopes_and_search(ctx: AppContext):
         other = TaskService(s).create(TaskCreate(title="other"))
         memories = MemoryService(s)
         g = memories.create(MemoryCreate(scope="global", content="公式ドキュメントを優先する"))
-        c = memories.create(MemoryCreate(scope="category", category_id=cat.id, content="認証カテゴリの共通知見: PKCE必須"))
-        t = memories.create(MemoryCreate(scope="task", task_id=task.id, content="OIDC Discovery の調査結果", kind="research"))
+        c = memories.create(
+            MemoryCreate(scope="category", category_id=cat.id, content="認証カテゴリの共通知見: PKCE必須")
+        )
+        t = memories.create(
+            MemoryCreate(scope="task", task_id=task.id, content="OIDC Discovery の調査結果", kind="research")
+        )
         memories.create(MemoryCreate(scope="task", task_id=other.id, content="別タスクの記憶 PKCE"))
         with pytest.raises(ValidationError):
             memories.create(MemoryCreate(scope="task", content="no task"))
@@ -163,13 +169,22 @@ def test_notifications_suppression_and_quiet_hours(ctx: AppContext):
     assert not in_quiet_hours(datetime(2026, 1, 1, 12, 0), "22:00", "07:00")
     assert not in_quiet_hours(datetime(2026, 1, 1, 12, 0), None, None)
     with ctx.db.session() as s:
-        service = NotificationService(s, NotificationSettings(min_interval_seconds=60, dedupe_window_minutes=60, desktop_enabled=False), None, ctx.broker)
+        service = NotificationService(
+            s,
+            NotificationSettings(min_interval_seconds=60, dedupe_window_minutes=60, desktop_enabled=False),
+            None,
+            ctx.broker,
+        )
         first = service.create("期限", "A", dedupe_key="due:1", source="manager")
         assert first is not None
         assert service.create("期限", "A", dedupe_key="due:1", source="manager") is None  # duplicate
-        assert service.create("別の期限", "B", dedupe_key="due:2", source="scheduler") is not None  # reminders are not rate limited
+        assert (
+            service.create("別の期限", "B", dedupe_key="due:2", source="scheduler") is not None
+        )  # reminders are not rate limited
         assert service.create("別", "B", source="manager") is None  # rate limited
-        assert service.create("緊急", "C", level="high", source="manager") is not None  # high bypasses rate limit
+        assert (
+            service.create("緊急", "C", level="high", source="manager") is not None
+        )  # high bypasses rate limit
         assert service.unread_count() == 3
         assert service.mark_read([first.id]) == 1
         assert service.unread_count() == 2
@@ -180,7 +195,12 @@ def test_notifications_suppression_and_quiet_hours(ctx: AppContext):
 
 def test_desktop_notification_uses_platform(ctx: AppContext, platform):
     with ctx.db.session() as s:
-        service = NotificationService(s, NotificationSettings(desktop_enabled=True, min_interval_seconds=0, level="normal"), platform, ctx.broker)
+        service = NotificationService(
+            s,
+            NotificationSettings(desktop_enabled=True, min_interval_seconds=0, level="normal"),
+            platform,
+            ctx.broker,
+        )
         platform._run.responses["notify-send"] = (0, "")
         import shutil
 
@@ -228,21 +248,33 @@ def test_execution_plan_work_items_dependencies_and_reviews(ctx: AppContext):
         t2 = TaskService(s).create(TaskCreate(title="B"))
         outsider = TaskService(s).create(TaskCreate(title="C"))
         service = ExecutionService(s, ctx.broker)
-        plan = service.create_plan("まとめて調査", "両方のレポートがある", [t1.id, t2.id], task_acceptance={t1.id: "A のレポート"})
+        plan = service.create_plan(
+            "まとめて調査", "両方のレポートがある", [t1.id, t2.id], task_acceptance={t1.id: "A のレポート"}
+        )
         assert plan.task_links[0].acceptance_criteria == "A のレポート"
         with pytest.raises(ValidationError):
             service.create_plan("x", "y", [])
-        items = service.create_work_items(plan.id, [
-            {"title": "調査A", "description": "a"},
-            {"title": "調査B", "description": "b"},
-            {"title": "統合", "description": "c", "depends_on": [0, "調査B"]},
-        ])
+        items = service.create_work_items(
+            plan.id,
+            [
+                {"title": "調査A", "description": "a"},
+                {"title": "調査B", "description": "b"},
+                {"title": "統合", "description": "c", "depends_on": [0, "調査B"]},
+            ],
+        )
         assert [w.title for w in service.ordered_work_items(plan.id)] == ["調査A", "調査B", "統合"]
         assert service.next_runnable(plan.id).title == "調査A"
         with pytest.raises(CycleError):
             service.add_dependency(items[0].id, items[2].id)
         with pytest.raises(CycleError):
-            service.create_work_items(plan.id, [{"title": "x", "description": "x", "depends_on": ["x"]}, {"title": "y", "description": "y", "depends_on": [0]}] + [{"title": "z", "description": "z", "depends_on": [1]}]) if False else (_ for _ in ()).throw(CycleError("x"))
+            service.create_work_items(
+                plan.id,
+                [
+                    {"title": "x", "description": "x", "depends_on": ["x"]},
+                    {"title": "y", "description": "y", "depends_on": [0]},
+                ]
+                + [{"title": "z", "description": "z", "depends_on": [1]}],
+            ) if False else (_ for _ in ()).throw(CycleError("x"))
         service.set_work_item_status(items[0].id, "succeeded", {"status": "succeeded", "summary": "ok"})
         service.set_work_item_status(items[1].id, "failed", {"status": "failed", "summary": "ng"})
         blocked = service.block_unrunnable(plan.id)
@@ -251,8 +283,12 @@ def test_execution_plan_work_items_dependencies_and_reviews(ctx: AppContext):
         assert service.plan_progress(plan.id) == {"succeeded": 1, "failed": 1, "blocked": 1, "total": 3}
         run = service.start_run("review", execution_plan_id=plan.id, model="fake")
         with pytest.raises(ValidationError):
-            service.record_review(plan.id, run.id, "failed", "x", [{"task_id": outsider.id, "status": "failed"}])
-        review = service.record_review(plan.id, run.id, "failed", "B が不足", [{"task_id": t1.id, "status": "passed"}])
+            service.record_review(
+                plan.id, run.id, "failed", "x", [{"task_id": outsider.id, "status": "failed"}]
+            )
+        review = service.record_review(
+            plan.id, run.id, "failed", "B が不足", [{"task_id": t1.id, "status": "passed"}]
+        )
         statuses = {r.task_id: r.status for r in review.task_results}
         assert statuses == {t1.id: "passed", t2.id: "failed"}
         service.finish_run(run.id, "succeeded", result_summary="done")
@@ -285,7 +321,13 @@ def test_artifacts_versions_diff_restore_and_containment(ctx: AppContext):
         task = TaskService(s).create(TaskCreate(title="成果物"))
         other = TaskService(s).create(TaskCreate(title="関連"))
         service = ArtifactService(s, store, ctx.broker)
-        artifact = service.create("調査レポート", "# v1\n\nline", task.id, related_task_ids=[other.id], sources=[{"title": "spec", "reference": "https://example.com"}])
+        artifact = service.create(
+            "調査レポート",
+            "# v1\n\nline",
+            task.id,
+            related_task_ids=[other.id],
+            sources=[{"title": "spec", "reference": "https://example.com"}],
+        )
         assert artifact.file_path.endswith("-v1.md") and (ctx.paths.artifacts / artifact.file_path).exists()
         dup = service.create("調査レポート", "dup", task.id)
         assert dup.file_path != artifact.file_path

@@ -134,7 +134,10 @@ def _first(item: dict[str, Any], keys: tuple[str, ...]) -> Any:
         if key in item and item[key] not in (None, ""):
             value = item[key]
             if isinstance(value, dict):
-                return _first(value, ("text", "name", "title", "value")) or json.dumps(value, ensure_ascii=False)[:200]
+                return (
+                    _first(value, ("text", "name", "title", "value"))
+                    or json.dumps(value, ensure_ascii=False)[:200]
+                )
             return value
     return None
 

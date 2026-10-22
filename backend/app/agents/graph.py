@@ -64,12 +64,18 @@ def build_agent_graph(model: BaseChatModel, tools: Sequence[BaseTool], max_itera
         graph.add_node("tools", tool_node)
         graph.add_edge("tools", "agent")
     graph.add_edge(START, "agent")
-    graph.add_conditional_edges("agent", route, {"tools": "tools", "limit": "limit", "end": END} if tool_node else {"end": END, "limit": "limit"})
+    graph.add_conditional_edges(
+        "agent",
+        route,
+        {"tools": "tools", "limit": "limit", "end": END} if tool_node else {"end": END, "limit": "limit"},
+    )
     graph.add_edge("limit", END)
     return graph.compile()
 
 
-def initial_messages(system_prompt: str, user_prompt: str, history: Sequence[BaseMessage] | None = None) -> list[BaseMessage]:
+def initial_messages(
+    system_prompt: str, user_prompt: str, history: Sequence[BaseMessage] | None = None
+) -> list[BaseMessage]:
     messages: list[BaseMessage] = [SystemMessage(content=system_prompt)]
     if history:
         messages.extend(history)

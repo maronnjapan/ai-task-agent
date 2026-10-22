@@ -13,8 +13,22 @@ class ConfluenceAdapter(ServiceAdapter):
     label = "Confluence"
     description = "Search and read Confluence pages (e.g. via the mcp-atlassian server)."
     search_tool_candidates = ("confluence_search", "search_pages", "search")
-    read_only_tools = ("confluence_search", "confluence_get_page", "confluence_get_page_children", "confluence_get_comments", "get_page", "search_pages")
-    external_write_tools = ("confluence_create_page", "confluence_update_page", "confluence_delete_page", "confluence_add_comment", "create_page", "update_page")
+    read_only_tools = (
+        "confluence_search",
+        "confluence_get_page",
+        "confluence_get_page_children",
+        "confluence_get_comments",
+        "get_page",
+        "search_pages",
+    )
+    external_write_tools = (
+        "confluence_create_page",
+        "confluence_update_page",
+        "confluence_delete_page",
+        "confluence_add_comment",
+        "create_page",
+        "update_page",
+    )
 
     def preset(self) -> AdapterPreset:
         return AdapterPreset(
@@ -25,7 +39,11 @@ class ConfluenceAdapter(ServiceAdapter):
             command="uvx",
             args=["mcp-atlassian"],
             auth_type="none",
-            env_hints={"CONFLUENCE_URL": "https://your-site.atlassian.net/wiki", "CONFLUENCE_USERNAME": "you@example.com", "CONFLUENCE_API_TOKEN": "Atlassian API token"},
+            env_hints={
+                "CONFLUENCE_URL": "https://your-site.atlassian.net/wiki",
+                "CONFLUENCE_USERNAME": "you@example.com",
+                "CONFLUENCE_API_TOKEN": "Atlassian API token",
+            },
             tool_permissions=[
                 {"tool_name": "confluence_create_page", "permission": "external_write", "enabled": False},
                 {"tool_name": "confluence_update_page", "permission": "external_write", "enabled": False},
@@ -50,6 +68,8 @@ class ConfluenceAdapter(ServiceAdapter):
 
     def normalize_item(self, item: dict[str, Any]) -> dict[str, Any]:
         data = super().normalize_item(item)
-        data["space"] = (item.get("space") or {}).get("key") if isinstance(item.get("space"), dict) else item.get("space")
+        data["space"] = (
+            (item.get("space") or {}).get("key") if isinstance(item.get("space"), dict) else item.get("space")
+        )
         data["source_type"] = "confluence"
         return data

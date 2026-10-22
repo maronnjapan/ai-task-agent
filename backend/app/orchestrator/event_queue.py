@@ -49,7 +49,9 @@ class EventQueue:
         self._loop = loop
         self._wakeup = asyncio.Event()
 
-    def push(self, event_type: str, payload: dict[str, Any] | None = None, session: Session | None = None) -> str:
+    def push(
+        self, event_type: str, payload: dict[str, Any] | None = None, session: Session | None = None
+    ) -> str:
         if session is not None:
             row = AppEvent(event_type=event_type, payload=dumps(payload or {}))
             session.add(row)
@@ -86,7 +88,11 @@ class EventQueue:
     def drain(self) -> list[Trigger]:
         """Return and mark processed all pending events (oldest first)."""
         with self.db.session() as session:
-            rows = list(session.execute(select(AppEvent).where(AppEvent.status == "pending").order_by(AppEvent.created_at)).scalars())
+            rows = list(
+                session.execute(
+                    select(AppEvent).where(AppEvent.status == "pending").order_by(AppEvent.created_at)
+                ).scalars()
+            )
             triggers = []
             for row in rows:
                 triggers.append(Trigger(type=row.event_type, payload=loads(row.payload, {}) or {}, id=row.id))
@@ -98,4 +104,8 @@ class EventQueue:
         from sqlalchemy import func
 
         with self.db.session() as session:
-            return int(session.execute(select(func.count(AppEvent.id)).where(AppEvent.status == "pending")).scalar_one())
+            return int(
+                session.execute(
+                    select(func.count(AppEvent.id)).where(AppEvent.status == "pending")
+                ).scalar_one()
+            )

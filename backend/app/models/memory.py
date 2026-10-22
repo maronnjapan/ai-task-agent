@@ -10,7 +10,9 @@ class Memory(Base):
     __tablename__ = "memories"
     __table_args__ = (
         CheckConstraint("scope IN ('global','category','task')", name="ck_memories_scope"),
-        CheckConstraint("kind IN ('hypothesis','ai_inference','research','decision')", name="ck_memories_kind"),
+        CheckConstraint(
+            "kind IN ('hypothesis','ai_inference','research','decision')", name="ck_memories_kind"
+        ),
         # scope / reference consistency (SPEC 23.4)
         CheckConstraint(
             "(scope = 'global' AND category_id IS NULL AND task_id IS NULL) OR "
@@ -25,7 +27,9 @@ class Memory(Base):
 
     id: Mapped[str] = id_column()
     scope: Mapped[str] = mapped_column(String, nullable=False)
-    category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"), nullable=True)
+    category_id: Mapped[str | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="CASCADE"), nullable=True
+    )
     task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str | None] = mapped_column(String, nullable=True)

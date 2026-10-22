@@ -41,7 +41,9 @@ class MemoryService:
             raise NotFoundError("Memory not found")
         return memory
 
-    def _validate_scope(self, scope: str, category_id: str | None, task_id: str | None) -> tuple[str | None, str | None]:
+    def _validate_scope(
+        self, scope: str, category_id: str | None, task_id: str | None
+    ) -> tuple[str | None, str | None]:
         scope = str(scope)
         if scope == MemoryScope.GLOBAL:
             return None, None
@@ -69,7 +71,9 @@ class MemoryService:
         )
         self.session.add(memory)
         self.session.flush()
-        self.audit.record("memory.created", "memory", memory.id, actor, {"scope": memory.scope, "kind": memory.kind})
+        self.audit.record(
+            "memory.created", "memory", memory.id, actor, {"scope": memory.scope, "kind": memory.kind}
+        )
         return memory
 
     def update(self, memory_id: str, data: MemoryUpdate, actor: str = Actor.USER) -> Memory:
@@ -101,7 +105,9 @@ class MemoryService:
         offset: int = 0,
     ) -> list[Memory]:
         if query and query.strip():
-            return self.search(query, scope=scope, task_id=task_id, category_id=category_id, kind=kind, limit=limit)
+            return self.search(
+                query, scope=scope, task_id=task_id, category_id=category_id, kind=kind, limit=limit
+            )
         stmt = select(Memory)
         if scope:
             stmt = stmt.where(Memory.scope == scope)
@@ -111,7 +117,11 @@ class MemoryService:
             stmt = stmt.where(Memory.category_id == category_id)
         if kind:
             stmt = stmt.where(Memory.kind == kind)
-        return list(self.session.execute(stmt.order_by(Memory.updated_at.desc()).limit(limit).offset(offset)).scalars())
+        return list(
+            self.session.execute(
+                stmt.order_by(Memory.updated_at.desc()).limit(limit).offset(offset)
+            ).scalars()
+        )
 
     def search(
         self,
@@ -125,7 +135,9 @@ class MemoryService:
         match = fts_query(query)
         ids: list[str] = []
         if match:
-            sql = text("SELECT memory_id FROM memories_fts WHERE memories_fts MATCH :q ORDER BY rank LIMIT :limit")
+            sql = text(
+                "SELECT memory_id FROM memories_fts WHERE memories_fts MATCH :q ORDER BY rank LIMIT :limit"
+            )
             try:
                 ids = [row[0] for row in self.session.execute(sql, {"q": match, "limit": limit * 4}).all()]
             except Exception:

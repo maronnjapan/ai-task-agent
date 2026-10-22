@@ -115,8 +115,9 @@ def create_schema(engine: Engine) -> None:
 
 def run_migrations(engine: Engine) -> None:
     """Upgrade the database to the latest Alembic revision."""
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     backend_root = Path(__file__).resolve().parent.parent.parent
     cfg = Config(str(backend_root / "alembic.ini"))

@@ -19,8 +19,13 @@ from app.infrastructure.database import Database
 from app.infrastructure.events import EventBroker
 from app.infrastructure.logging import configure_logging
 from app.infrastructure.paths import build_paths
-from app.infrastructure.secrets.base import InMemorySecretProvider, SecretProvider
-from app.infrastructure.secrets.bootstrap import SecretBootstrap, console_confirmer, console_prompter, select_secret_provider
+from app.infrastructure.secrets.base import SecretProvider
+from app.infrastructure.secrets.bootstrap import (
+    SecretBootstrap,
+    console_confirmer,
+    console_prompter,
+    select_secret_provider,
+)
 from app.llm.providers import LLMFactory
 from app.platform import PlatformAdapter, make_platform_adapter
 from app.services.errors import ServiceError
@@ -58,14 +63,26 @@ def build_context(
     bootstrap = SecretBootstrap(
         store,
         prompter=console_prompter if interactive else None,
-        confirmer=console_confirmer("macOS Keychain" if getattr(store, "name", "") in ("keychain", "layered") else ".env") if interactive else None,
+        confirmer=console_confirmer(
+            "macOS Keychain" if getattr(store, "name", "") in ("keychain", "layered") else ".env"
+        )
+        if interactive
+        else None,
         interactive=interactive,
     )
     result = bootstrap.run(required_llm_providers(db, settings))
     if result.missing:
         log.warning("API keys not configured: %s (configure them in Settings)", ", ".join(result.missing))
     override = provider_override or settings.aiwm_llm_provider_override
-    ctx = AppContext(settings=settings, paths=paths, db=db, broker=EventBroker(), platform=platform, secrets=result.secrets, secret_store=store)
+    ctx = AppContext(
+        settings=settings,
+        paths=paths,
+        db=db,
+        broker=EventBroker(),
+        platform=platform,
+        secrets=result.secrets,
+        secret_store=store,
+    )
     ctx.llm_factory = LLMFactory(ctx.secrets, provider_override=override)
     from app.integrations.mcp.registry import MCPRegistry
 
@@ -94,9 +111,21 @@ def create_app(ctx: AppContext | None = None, serve_frontend: bool = True) -> Fa
                 await ctx.mcp_registry.shutdown()
             ctx.db.dispose()
 
-    app = FastAPI(title="Autonomous AI Work Manager", version=__version__, lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
+    app = FastAPI(
+        title="Autonomous AI Work Manager",
+        version=__version__,
+        lifespan=lifespan,
+        docs_url="/api/docs",
+        openapi_url="/api/openapi.json",
+        redoc_url=None,
+    )
     app.state.ctx = ctx
-    app.add_middleware(LocalApiProtectionMiddleware, app_host=ctx.settings.app_host, app_port=ctx.settings.app_port, extra_hosts={"testserver"})
+    app.add_middleware(
+        LocalApiProtectionMiddleware,
+        app_host=ctx.settings.app_host,
+        app_port=ctx.settings.app_port,
+        extra_hosts={"testserver"},
+    )
 
     @app.exception_handler(ServiceError)
     async def service_error_handler(request: Request, exc: ServiceError):
@@ -120,7 +149,14 @@ def create_app(ctx: AppContext | None = None, serve_frontend: bool = True) -> Fa
 
         @app.get("/", include_in_schema=False)
         async def root():
-            return JSONResponse({"name": "Autonomous AI Work Manager", "version": __version__, "frontend": "not built - run `npm run build` in frontend/", "api_docs": "/api/docs"})
+            return JSONResponse(
+                {
+                    "name": "Autonomous AI Work Manager",
+                    "version": __version__,
+                    "frontend": "not built - run `npm run build` in frontend/",
+                    "api_docs": "/api/docs",
+                }
+            )
 
     return app
 
@@ -145,7 +181,13 @@ def serve(ctx: AppContext | None = None, open_browser: bool = False) -> None:
 
         threading.Timer(1.5, lambda: ctx.platform.open_browser(url)).start()
     try:
-        uvicorn.run(app, host=ctx.settings.app_host, port=ctx.settings.app_port, log_level=ctx.settings.log_level.lower(), access_log=False)
+        uvicorn.run(
+            app,
+            host=ctx.settings.app_host,
+            port=ctx.settings.app_port,
+            log_level=ctx.settings.log_level.lower(),
+            access_log=False,
+        )
     finally:
         lock.release()
         try:

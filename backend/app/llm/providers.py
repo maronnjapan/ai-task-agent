@@ -34,7 +34,9 @@ def _openai(config: LLMConfig, api_key: str | None) -> BaseChatModel:
     }
     if config.extra.get("base_url"):
         kwargs["base_url"] = config.extra["base_url"]
-    if not str(config.model).startswith(("o1", "o3", "o4", "gpt-5", "gpt-6")) or config.extra.get("force_temperature"):
+    if not str(config.model).startswith(("o1", "o3", "o4", "gpt-5", "gpt-6")) or config.extra.get(
+        "force_temperature"
+    ):
         kwargs["temperature"] = config.temperature
     return ChatOpenAI(**kwargs)
 

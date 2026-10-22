@@ -71,7 +71,9 @@ class BackupService:
                 zf.writestr(MANIFEST, json.dumps(manifest, indent=2))
         finally:
             shutil.rmtree(staging, ignore_errors=True)
-        return BackupInfo(path=target, size_bytes=target.stat().st_size, created_at=now_iso(), includes=includes)
+        return BackupInfo(
+            path=target, size_bytes=target.stat().st_size, created_at=now_iso(), includes=includes
+        )
 
     def list(self, directory: Path | None = None) -> list[BackupInfo]:
         directory = Path(directory) if directory else self.paths.backups
@@ -89,7 +91,10 @@ class BackupService:
                         created = manifest.get("created_at", created)
             except zipfile.BadZipFile:
                 continue
-            result.append(BackupInfo(path=file, size_bytes=file.stat().st_size, created_at=created, includes=includes))
+            result.append(
+                BackupInfo(path=file, size_bytes=file.stat().st_size, created_at=created, includes=includes)
+            )
+        result.sort(key=lambda info: info.created_at, reverse=True)
         return result
 
     def prune(self, keep_last: int, directory: Path | None = None) -> int:

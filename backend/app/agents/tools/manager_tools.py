@@ -34,7 +34,11 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
             for task in tasks:
                 extra = service.decorate(task)
                 open_contexts = [c.context for c in service.open_contexts(task.id)]
-                rows.append(task_to_dict(task, {"active_plan_id": extra["active_plan_id"], "open_user_contexts": open_contexts}))
+                rows.append(
+                    task_to_dict(
+                        task, {"active_plan_id": extra["active_plan_id"], "open_user_contexts": open_contexts}
+                    )
+                )
             return as_json(rows)
 
     def get_task(task_id: str) -> str:
@@ -48,17 +52,36 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
             decisions = [d.content for d in DecisionService(session).active(task.id)]
             contexts = [{"context": c.context, "source": c.source} for c in service.open_contexts(task.id)]
             plans = [
-                {"id": p.id, "status": p.status, "objective": p.objective, "replanning_attempt": p.replanning_attempt}
+                {
+                    "id": p.id,
+                    "status": p.status,
+                    "objective": p.objective,
+                    "replanning_attempt": p.replanning_attempt,
+                }
                 for p in ExecutionService(session).plans_for_task(task.id)[:5]
             ]
-            return as_json(task_to_dict(task, {"decisions": decisions, "open_user_contexts": contexts, "plans": plans}))
+            return as_json(
+                task_to_dict(task, {"decisions": decisions, "open_user_contexts": contexts, "plans": plans})
+            )
 
-    def create_task(title: str, description: str | None = None, due_at: str | None = None, category_id: str | None = None, assignee: str = "shared") -> str:
+    def create_task(
+        title: str,
+        description: str | None = None,
+        due_at: str | None = None,
+        category_id: str | None = None,
+        assignee: str = "shared",
+    ) -> str:
         """Create a new task (assignee: user | ai | shared). due_at is an ISO-8601 datetime or null."""
         with ctx.session() as session:
             try:
                 task = TaskService(session, app.broker).create(
-                    TaskCreate(title=title, description=description, due_at=due_at, category_id=category_id, assignee=Assignee(assignee)),
+                    TaskCreate(
+                        title=title,
+                        description=description,
+                        due_at=due_at,
+                        category_id=category_id,
+                        assignee=Assignee(assignee),
+                    ),
                     actor="ai",
                     change_summary="Manager AI が作成",
                 )
@@ -67,7 +90,16 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
             ctx.record("created_tasks", task.id)
             return as_json(task_to_dict(task))
 
-    def update_task(task_id: str, title: str | None = None, description: str | None = None, due_at: str | None = None, status: str | None = None, assignee: str | None = None, category_id: str | None = None, change_summary: str | None = None) -> str:
+    def update_task(
+        task_id: str,
+        title: str | None = None,
+        description: str | None = None,
+        due_at: str | None = None,
+        status: str | None = None,
+        assignee: str | None = None,
+        category_id: str | None = None,
+        change_summary: str | None = None,
+    ) -> str:
         """Update task fields. Only provided fields change. Status cannot be set to completed (user approval required)."""
         if status == "completed":
             return "error: completed requires user approval; use review flow instead"
@@ -93,7 +125,12 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
         """Formal decisions for a task (active ones first)."""
         with ctx.session() as session:
             rows = DecisionService(session).list(task_id)
-            return as_json([{"id": d.id, "content": d.content, "status": d.status, "decided_at": d.decided_at} for d in rows])
+            return as_json(
+                [
+                    {"id": d.id, "content": d.content, "status": d.status, "decided_at": d.decided_at}
+                    for d in rows
+                ]
+            )
 
     def get_relevant_memories(query: str | None = None, task_id: str | None = None, limit: int = 15) -> str:
         """Search long-term memory. With task_id returns global + category + task memories for that task."""
@@ -116,7 +153,14 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
         with ctx.session() as session:
             service = UserStateService(session)
             state = service.get()
-            return as_json({"condition": state.condition or None, "active": service.is_active(state), "source": state.source, "expires_at": state.expires_at})
+            return as_json(
+                {
+                    "condition": state.condition or None,
+                    "active": service.is_active(state),
+                    "source": state.source,
+                    "expires_at": state.expires_at,
+                }
+            )
 
     def list_execution_plans(status: str | None = None, task_id: str | None = None) -> str:
         """List execution plans (optionally filtered by status list or task)."""
@@ -139,11 +183,20 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
                 data["latest_review"] = {
                     "status": review.status,
                     "feedback": review.feedback,
-                    "task_results": [{"task_id": r.task_id, "status": r.status, "feedback": r.feedback} for r in review.task_results],
+                    "task_results": [
+                        {"task_id": r.task_id, "status": r.status, "feedback": r.feedback}
+                        for r in review.task_results
+                    ],
                 }
             return as_json(data)
 
-    def create_execution_plan(objective: str, acceptance_criteria: str, task_ids: list[str], task_acceptance_criteria: dict[str, str] | None = None, parent_plan_id: str | None = None) -> str:
+    def create_execution_plan(
+        objective: str,
+        acceptance_criteria: str,
+        task_ids: list[str],
+        task_acceptance_criteria: dict[str, str] | None = None,
+        parent_plan_id: str | None = None,
+    ) -> str:
         """Create an Execution Plan for one or more tasks. task_acceptance_criteria maps task_id -> criteria.
         For replanning pass parent_plan_id of the failed plan."""
         with ctx.session() as session:
@@ -162,7 +215,11 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
                     return f"error: task {task_id} is {task.status}; it must not be planned"
                 if task.assignee == Assignee.USER:
                     return f"error: task {task_id} is assigned to the user; AI must not work on it"
-                active = [p for p in service.plans_for_task(task_id) if p.status in ("planned", "running", "reviewing") and p.id != parent_plan_id]
+                active = [
+                    p
+                    for p in service.plans_for_task(task_id)
+                    if p.status in ("planned", "running", "reviewing") and p.id != parent_plan_id
+                ]
                 if active:
                     return f"error: task {task_id} already has an active plan {active[0].id}"
             try:
@@ -179,7 +236,9 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
             for task_id in task_ids:
                 task = task_service.get(task_id)
                 if task.status in (TaskStatus.TODO, TaskStatus.BLOCKED):
-                    task_service.set_status(task_id, TaskStatus.IN_PROGRESS, actor="ai", summary="Manager AI が計画を作成")
+                    task_service.set_status(
+                        task_id, TaskStatus.IN_PROGRESS, actor="ai", summary="Manager AI が計画を作成"
+                    )
             ctx.record("plans", plan.id)
             return as_json({"plan_id": plan.id, "status": plan.status, "tasks": task_ids})
 
@@ -194,7 +253,9 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
                 return f"error: {exc.message}"
             ctx.record("work_items", [w.id for w in created])
             deps = service.dependencies(plan_id)
-            return as_json([{"id": w.id, "title": w.title, "depends_on": sorted(deps.get(w.id, ()))} for w in created])
+            return as_json(
+                [{"id": w.id, "title": w.title, "depends_on": sorted(deps.get(w.id, ()))} for w in created]
+            )
 
     def get_review_results(plan_id: str) -> str:
         """Review results for a plan (latest first)."""
@@ -211,13 +272,22 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
                         "status": r.status,
                         "feedback": r.feedback,
                         "created_at": r.created_at,
-                        "task_results": [{"task_id": t.task_id, "status": t.status, "feedback": t.feedback} for t in r.task_results],
+                        "task_results": [
+                            {"task_id": t.task_id, "status": t.status, "feedback": t.feedback}
+                            for t in r.task_results
+                        ],
                     }
                     for r in reviews
                 ]
             )
 
-    def schedule_action(action_type: str, scheduled_at: str | None = None, delay_minutes: int | None = None, task_id: str | None = None, note: str | None = None) -> str:
+    def schedule_action(
+        action_type: str,
+        scheduled_at: str | None = None,
+        delay_minutes: int | None = None,
+        task_id: str | None = None,
+        note: str | None = None,
+    ) -> str:
         """Schedule a future action: manager_reevaluate | due_check | notify | remind_pending_review.
         Provide scheduled_at (ISO-8601) or delay_minutes."""
         from app.orchestrator.scheduler import SchedulerService
@@ -230,17 +300,30 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
         except ValueError:
             return "error: scheduled_at must be ISO-8601"
         with ctx.session() as session:
-            action = SchedulerService(session).schedule(action_type, when, task_id=task_id, payload={"note": note, "by": "manager"})
+            action = SchedulerService(session).schedule(
+                action_type, when, task_id=task_id, payload={"note": note, "by": "manager"}
+            )
             ctx.record("scheduled", action.id)
-            return as_json({"id": action.id, "action_type": action.action_type, "scheduled_at": action.scheduled_at})
+            return as_json(
+                {"id": action.id, "action_type": action.action_type, "scheduled_at": action.scheduled_at}
+            )
 
-    def create_notification(title: str, body: str = "", level: str = "normal", task_id: str | None = None) -> str:
+    def create_notification(
+        title: str, body: str = "", level: str = "normal", task_id: str | None = None
+    ) -> str:
         """Notify the user (level: low | normal | high). Duplicate or too frequent notifications are suppressed."""
         with ctx.session() as session:
             settings = SettingsService(session, app.settings).get_notifications()
             service = NotificationService(session, settings, app.platform, app.broker)
             try:
-                row = service.create(title, body, level=level, task_id=task_id, source="manager", dedupe_key=f"manager:{task_id or 'global'}:{title[:40]}")
+                row = service.create(
+                    title,
+                    body,
+                    level=level,
+                    task_id=task_id,
+                    source="manager",
+                    dedupe_key=f"manager:{task_id or 'global'}:{title[:40]}",
+                )
             except ValueError as exc:
                 return f"error: {exc}"
             if row is None:
@@ -260,12 +343,26 @@ def build_manager_tools(ctx: AgentContext) -> list[BaseTool]:
             ctx.record("decisions", decision.id)
             return as_json({"id": decision.id, "content": decision.content})
 
-    def save_memory(content: str, scope: str = "global", task_id: str | None = None, category_id: str | None = None, kind: str = "ai_inference") -> str:
+    def save_memory(
+        content: str,
+        scope: str = "global",
+        task_id: str | None = None,
+        category_id: str | None = None,
+        kind: str = "ai_inference",
+    ) -> str:
         """Save a long-term memory (kind: hypothesis | ai_inference | research | decision). Decision kind only for confirmed facts."""
         with ctx.session() as session:
             try:
                 memory = MemoryService(session).create(
-                    MemoryCreate(scope=scope, task_id=task_id, category_id=category_id, content=content, source="manager", kind=kind, confirmed=kind == "decision" and ctx.mode == "instruction"),
+                    MemoryCreate(
+                        scope=scope,
+                        task_id=task_id,
+                        category_id=category_id,
+                        content=content,
+                        source="manager",
+                        kind=kind,
+                        confirmed=kind == "decision" and ctx.mode == "instruction",
+                    ),
                     actor="ai",
                 )
             except (ServiceError, ValueError) as exc:

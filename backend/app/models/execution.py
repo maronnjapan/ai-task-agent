@@ -28,7 +28,9 @@ class ExecutionPlan(Base):
     created_at: Mapped[str] = ts_column()
     updated_at: Mapped[str] = ts_column()
 
-    task_links: Mapped[list[RelatedPlanToTask]] = relationship(back_populates="plan", cascade="all, delete-orphan")
+    task_links: Mapped[list[RelatedPlanToTask]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan"
+    )
     work_items: Mapped[list[WorkItem]] = relationship(
         back_populates="plan", cascade="all, delete-orphan", order_by="WorkItem.order_index"
     )
@@ -51,13 +53,16 @@ class WorkItem(Base):
     __tablename__ = "work_items"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending','running','succeeded','failed','blocked','skipped')", name="ck_work_items_status"
+            "status IN ('pending','running','succeeded','failed','blocked','skipped')",
+            name="ck_work_items_status",
         ),
         Index("ix_work_items_plan", "execution_plan_id"),
     )
 
     id: Mapped[str] = id_column()
-    execution_plan_id: Mapped[str] = mapped_column(ForeignKey("execution_plans.id", ondelete="CASCADE"), nullable=False)
+    execution_plan_id: Mapped[str] = mapped_column(
+        ForeignKey("execution_plans.id", ondelete="CASCADE"), nullable=False
+    )
     title: Mapped[str] = mapped_column(String, nullable=False, default="")
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
@@ -76,7 +81,9 @@ class WorkItemDependency(Base):
         CheckConstraint("work_item_id <> depends_on_work_item_id", name="ck_work_item_dependencies_self"),
     )
 
-    work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id", ondelete="CASCADE"), primary_key=True)
+    work_item_id: Mapped[str] = mapped_column(
+        ForeignKey("work_items.id", ondelete="CASCADE"), primary_key=True
+    )
     depends_on_work_item_id: Mapped[str] = mapped_column(
         ForeignKey("work_items.id", ondelete="CASCADE"), primary_key=True
     )
@@ -86,7 +93,9 @@ class AgentRun(Base):
     __tablename__ = "agent_runs"
     __table_args__ = (
         CheckConstraint("agent_type IN ('manager','worker','review')", name="ck_agent_runs_agent_type"),
-        CheckConstraint("status IN ('running','succeeded','failed','cancelled')", name="ck_agent_runs_status"),
+        CheckConstraint(
+            "status IN ('running','succeeded','failed','cancelled')", name="ck_agent_runs_status"
+        ),
         Index("ix_agent_runs_plan", "execution_plan_id"),
         Index("ix_agent_runs_started", "started_at"),
     )
@@ -95,7 +104,9 @@ class AgentRun(Base):
     execution_plan_id: Mapped[str | None] = mapped_column(
         ForeignKey("execution_plans.id", ondelete="SET NULL"), nullable=True
     )
-    work_item_id: Mapped[str | None] = mapped_column(ForeignKey("work_items.id", ondelete="SET NULL"), nullable=True)
+    work_item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("work_items.id", ondelete="SET NULL"), nullable=True
+    )
     agent_type: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="running")
     model: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -115,19 +126,25 @@ class Review(Base):
     )
 
     id: Mapped[str] = id_column()
-    execution_plan_id: Mapped[str] = mapped_column(ForeignKey("execution_plans.id", ondelete="CASCADE"), nullable=False)
+    execution_plan_id: Mapped[str] = mapped_column(
+        ForeignKey("execution_plans.id", ondelete="CASCADE"), nullable=False
+    )
     agent_run_id: Mapped[str] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     feedback: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[str] = ts_column()
 
     plan: Mapped[ExecutionPlan] = relationship(back_populates="reviews")
-    task_results: Mapped[list[ReviewTaskResult]] = relationship(back_populates="review", cascade="all, delete-orphan")
+    task_results: Mapped[list[ReviewTaskResult]] = relationship(
+        back_populates="review", cascade="all, delete-orphan"
+    )
 
 
 class ReviewTaskResult(Base):
     __tablename__ = "review_task_results"
-    __table_args__ = (CheckConstraint("status IN ('passed','failed','blocked')", name="ck_review_task_results_status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('passed','failed','blocked')", name="ck_review_task_results_status"),
+    )
 
     review_id: Mapped[str] = mapped_column(ForeignKey("reviews.id", ondelete="CASCADE"), primary_key=True)
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)

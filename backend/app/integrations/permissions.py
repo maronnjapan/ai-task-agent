@@ -6,8 +6,13 @@ import re
 
 from app.models.enums import ToolPermission
 
-_EXTERNAL_WRITE = re.compile(r"(post|send|publish|reply|create|update|delete|remove|write|upload|edit|move|transition|comment|share|invite|add_|set_|assign|archive|notify|mail|email|put_)", re.IGNORECASE)
-_READ = re.compile(r"(search|get|list|read|fetch|find|query|lookup|describe|download|view|show|history|count)", re.IGNORECASE)
+_EXTERNAL_WRITE = re.compile(
+    r"(post|send|publish|reply|create|update|delete|remove|write|upload|edit|move|transition|comment|share|invite|add_|set_|assign|archive|notify|mail|email|put_)",
+    re.IGNORECASE,
+)
+_READ = re.compile(
+    r"(search|get|list|read|fetch|find|query|lookup|describe|download|view|show|history|count)", re.IGNORECASE
+)
 
 
 def classify_tool(tool_name: str, description: str | None = None) -> str:

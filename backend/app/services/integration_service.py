@@ -45,7 +45,9 @@ class IntegrationService:
 
     def create(self, data: IntegrationCreate, actor: str = "user") -> MCPConnection:
         self._validate(data.transport, data.auth_type, data.command, data.url)
-        if self.session.execute(select(MCPConnection).where(MCPConnection.name == data.name)).scalar_one_or_none():
+        if self.session.execute(
+            select(MCPConnection).where(MCPConnection.name == data.name)
+        ).scalar_one_or_none():
             raise ValidationError("An integration with that name already exists")
         row = MCPConnection(
             name=data.name.strip(),
@@ -69,7 +71,9 @@ class IntegrationService:
             self.secret_store.set_secret(row.secret_ref, data.secret)
         self._set_permissions(row, [p.model_dump() for p in data.tool_permissions])
         self.session.flush()
-        self.audit.record("mcp.created", "mcp_connection", row.id, actor, {"name": row.name, "transport": row.transport})
+        self.audit.record(
+            "mcp.created", "mcp_connection", row.id, actor, {"name": row.name, "transport": row.transport}
+        )
         return row
 
     def update(self, connection_id: str, data: IntegrationUpdate, actor: str = "user") -> MCPConnection:
@@ -81,12 +85,21 @@ class IntegrationService:
             if key in changes and changes[key] is not None:
                 changes[key] = dumps(changes[key])
         for key, value in changes.items():
-            if value is None and key in ("name", "adapter", "transport", "auth_type", "timeout_seconds", "enabled"):
+            if value is None and key in (
+                "name",
+                "adapter",
+                "transport",
+                "auth_type",
+                "timeout_seconds",
+                "enabled",
+            ):
                 continue
             setattr(row, key, value)
         self._validate(row.transport, row.auth_type, row.command, row.url)
         if secret:
-            self.secret_store.set_secret(row.secret_ref or ConnectionConfig.from_model(row).secret_name(), secret)
+            self.secret_store.set_secret(
+                row.secret_ref or ConnectionConfig.from_model(row).secret_name(), secret
+            )
         if permissions is not None:
             self._set_permissions(row, permissions)
         row.updated_at = now_iso()
@@ -118,7 +131,11 @@ class IntegrationService:
                 existing[name].permission = permission
                 existing[name].enabled = enabled
             else:
-                self.session.add(MCPToolPermission(connection_id=row.id, tool_name=name, permission=permission, enabled=enabled))
+                self.session.add(
+                    MCPToolPermission(
+                        connection_id=row.id, tool_name=name, permission=permission, enabled=enabled
+                    )
+                )
         self.session.flush()
 
     def has_secret(self, row: MCPConnection) -> bool:

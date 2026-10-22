@@ -12,7 +12,13 @@ from tests.conftest import FakeRunner
 
 
 def spec(tmp_path: Path) -> AutostartSpec:
-    return AutostartSpec(label="com.aiworkmanager.test", command=["/usr/bin/uv", "run", "aiwm", "start"], working_directory=tmp_path, log_directory=tmp_path / "logs", environment={"AIWM_ENV_FILE": str(tmp_path / ".env")})
+    return AutostartSpec(
+        label="com.aiworkmanager.test",
+        command=["/usr/bin/uv", "run", "aiwm", "start"],
+        working_directory=tmp_path,
+        log_directory=tmp_path / "logs",
+        environment={"AIWM_ENV_FILE": str(tmp_path / ".env")},
+    )
 
 
 def test_platform_detection():
@@ -33,7 +39,10 @@ def test_data_directories(tmp_path: Path):
     assert WSLPlatformAdapter(home=tmp_path).get_data_directory() == tmp_path / ".ai-work-manager"
     win = WindowsPlatformAdapter(home=tmp_path, env={"LOCALAPPDATA": str(tmp_path / "Local")})
     assert win.get_data_directory() == tmp_path / "Local" / "AIWorkManager"
-    assert WindowsPlatformAdapter(home=tmp_path, env={}).get_data_directory() == tmp_path / "AppData" / "Local" / "AIWorkManager"
+    assert (
+        WindowsPlatformAdapter(home=tmp_path, env={}).get_data_directory()
+        == tmp_path / "AppData" / "Local" / "AIWorkManager"
+    )
 
 
 def test_macos_launchd_and_notifications(tmp_path: Path):
@@ -64,7 +73,11 @@ def test_windows_task_scheduler_and_toast(tmp_path: Path):
     assert adapter.is_autostart_installed("com.aiworkmanager.test") and runner.calls[-1][1] == "/Query"
     assert adapter.remove_autostart("com.aiworkmanager.test") and runner.calls[-1][1] == "/Delete"
     assert adapter.show_notification("Hi", "It's done")
-    assert runner.calls[-1][0] == "powershell.exe" and "ToastNotification" in runner.calls[-1][-1] and "It''s done" in runner.calls[-1][-1]
+    assert (
+        runner.calls[-1][0] == "powershell.exe"
+        and "ToastNotification" in runner.calls[-1][-1]
+        and "It''s done" in runner.calls[-1][-1]
+    )
     failing = WindowsPlatformAdapter(runner=FakeRunner(returncode=1), home=tmp_path, env={})
     import pytest
 
@@ -102,7 +115,11 @@ def test_wsl_bridges_to_windows_host(tmp_path: Path):
     assert "ToastNotification" in runner.calls[-1][-1]
     assert adapter.autostart_method == "profile_script"
     info = adapter.get_platform_info()
-    assert info.name == "wsl" and info.details["windows_bridge"] == "yes" and info.notification_method == "windows_toast_bridge"
+    assert (
+        info.name == "wsl"
+        and info.details["windows_bridge"] == "yes"
+        and info.notification_method == "windows_toast_bridge"
+    )
     # wslview preferred when available
     adapter._which = lambda b: "/usr/bin/wslview" if b == "wslview" else None  # type: ignore[method-assign]
     adapter.open_browser("http://x")

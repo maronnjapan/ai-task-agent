@@ -23,7 +23,9 @@ def _key_status(ctx: AppContext) -> list[ProviderKeyStatus]:
     for provider in ("openai", "anthropic", "google"):
         name = secret_name_for_provider(provider)
         configured = bool(ctx.secrets.get_secret(name) or ctx.secret_store.get_secret(name))
-        result.append(ProviderKeyStatus(provider=provider, secret_name=name, configured=configured, backend=backend))
+        result.append(
+            ProviderKeyStatus(provider=provider, secret_name=name, configured=configured, backend=backend)
+        )
     return result
 
 
@@ -41,7 +43,12 @@ def _settings_out(session: Session, ctx: AppContext) -> SettingsOut:
         autostart_installed=ctx.platform.is_autostart_installed(AUTOSTART_LABEL),
         data_directory=str(ctx.paths.root),
         env_file=str(ctx.settings.env_file),
-        app={"host": ctx.settings.app_host, "port": ctx.settings.app_port, "auto_start_manager": ctx.settings.auto_start_manager, "providers": ctx.llm_factory.providers() if ctx.llm_factory else []},
+        app={
+            "host": ctx.settings.app_host,
+            "port": ctx.settings.app_port,
+            "auto_start_manager": ctx.settings.auto_start_manager,
+            "providers": ctx.llm_factory.providers() if ctx.llm_factory else [],
+        },
     )
 
 
@@ -51,7 +58,9 @@ def get_settings(session: Session = Depends(get_session), ctx: AppContext = Depe
 
 
 @router.patch("", response_model=SettingsOut)
-def patch_settings(data: SettingsPatch, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
+def patch_settings(
+    data: SettingsPatch, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)
+):
     service = SettingsService(session, ctx.settings)
     changed = []
     if data.llm is not None:
@@ -76,7 +85,9 @@ def patch_settings(data: SettingsPatch, session: Session = Depends(get_session),
 
 
 @router.post("/api-keys", response_model=list[ProviderKeyStatus])
-def set_api_key(data: ApiKeyUpdate, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
+def set_api_key(
+    data: ApiKeyUpdate, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)
+):
     name = secret_name_for_provider(data.provider)
     from app.infrastructure.logging import register_secret
 
@@ -94,7 +105,9 @@ def set_api_key(data: ApiKeyUpdate, session: Session = Depends(get_session), ctx
 
 
 @router.delete("/api-keys", response_model=list[ProviderKeyStatus])
-def delete_api_key(data: ApiKeyDelete, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
+def delete_api_key(
+    data: ApiKeyDelete, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)
+):
     name = secret_name_for_provider(data.provider)
     ctx.secret_store.delete_secret(name)
     ctx.secrets.delete_secret(name)
@@ -103,13 +116,21 @@ def delete_api_key(data: ApiKeyDelete, session: Session = Depends(get_session), 
 
 
 @router.post("/autostart", response_model=Message)
-def set_autostart(data: AutostartRequest, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
-    from app.platform.base import AutostartSpec
+def set_autostart(
+    data: AutostartRequest, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)
+):
     from app.cli import autostart_command
+    from app.platform.base import AutostartSpec
 
     try:
         if data.enabled:
-            spec = AutostartSpec(label=AUTOSTART_LABEL, command=autostart_command(), working_directory=ctx.settings.env_file.parent, log_directory=ctx.paths.logs, environment={"AIWM_ENV_FILE": str(ctx.settings.env_file)})
+            spec = AutostartSpec(
+                label=AUTOSTART_LABEL,
+                command=autostart_command(),
+                working_directory=ctx.settings.env_file.parent,
+                log_directory=ctx.paths.logs,
+                environment={"AIWM_ENV_FILE": str(ctx.settings.env_file)},
+            )
             location = ctx.platform.install_autostart(spec)
             message = f"自動起動を登録しました: {location}"
         else:

@@ -11,8 +11,12 @@ from langchain_core.tools import StructuredTool
 from app.utils import dumps
 
 
-def make_tool(func: Callable[..., Any], name: str, description: str, coroutine: Callable[..., Any] | None = None) -> StructuredTool:
-    return StructuredTool.from_function(func=func, coroutine=coroutine, name=name, description=description, infer_schema=True)
+def make_tool(
+    func: Callable[..., Any], name: str, description: str, coroutine: Callable[..., Any] | None = None
+) -> StructuredTool:
+    return StructuredTool.from_function(
+        func=func, coroutine=coroutine, name=name, description=description, infer_schema=True
+    )
 
 
 def as_json(data: Any) -> str:
@@ -50,7 +54,8 @@ def plan_to_dict(plan, exec_service, include_items: bool = True) -> dict[str, An
         "replanning_attempt": plan.replanning_attempt,
         "created_at": plan.created_at,
         "tasks": [
-            {"task_id": link.task_id, "acceptance_criteria": link.acceptance_criteria} for link in plan.task_links
+            {"task_id": link.task_id, "acceptance_criteria": link.acceptance_criteria}
+            for link in plan.task_links
         ],
     }
     if include_items:

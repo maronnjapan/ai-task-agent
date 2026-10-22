@@ -61,7 +61,9 @@ class ChatService:
         self.session.flush()
         self.audit.record("chat.deleted", "chat", chat_id, actor)
 
-    def list_messages(self, chat_id: str, before: str | None = None, limit: int = 50) -> tuple[list[ChatMessage], bool]:
+    def list_messages(
+        self, chat_id: str, before: str | None = None, limit: int = 50
+    ) -> tuple[list[ChatMessage], bool]:
         """Return messages in chronological order with simple keyset paging."""
         self.get_chat(chat_id)
         stmt = select(ChatMessage).where(ChatMessage.chat_id == chat_id)
@@ -91,7 +93,12 @@ class ChatService:
         if self.broker:
             self.broker.publish(
                 "chat.message",
-                {"chat_id": chat.id, "task_id": chat.task_id, "message_id": message.id, "author_type": author_type},
+                {
+                    "chat_id": chat.id,
+                    "task_id": chat.task_id,
+                    "message_id": message.id,
+                    "author_type": author_type,
+                },
             )
         return message
 
@@ -109,7 +116,11 @@ class ChatService:
         ids = [row[0] for row in self.session.execute(sql, {"q": match, "limit": limit * 3}).all()]
         if not ids:
             return []
-        stmt = select(ChatMessage).join(TaskChat, TaskChat.id == ChatMessage.chat_id).where(ChatMessage.id.in_(ids))
+        stmt = (
+            select(ChatMessage)
+            .join(TaskChat, TaskChat.id == ChatMessage.chat_id)
+            .where(ChatMessage.id.in_(ids))
+        )
         if task_id:
             stmt = stmt.where(TaskChat.task_id == task_id)
         rows = list(self.session.execute(stmt.limit(limit)).scalars())

@@ -13,7 +13,10 @@ router = APIRouter(prefix="/api/categories", tags=["categories"])
 
 @router.get("", response_model=list[CategoryOut])
 def list_categories(session: Session = Depends(get_session)):
-    return [CategoryOut(id=c.id, name=c.name, created_at=c.created_at, task_count=n) for c, n in CategoryService(session).list()]
+    return [
+        CategoryOut(id=c.id, name=c.name, created_at=c.created_at, task_count=n)
+        for c, n in CategoryService(session).list()
+    ]
 
 
 @router.post("", response_model=CategoryOut, status_code=201)

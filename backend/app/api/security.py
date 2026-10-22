@@ -32,7 +32,9 @@ class LocalApiProtectionMiddleware(BaseHTTPMiddleware):
     def _host_ok(self, value: str | None) -> bool:
         if not value:
             return False
-        return value.lower() in {h.lower() for h in self.hosts} or value.split(":")[0].lower() in {h.split(":")[0].lower() for h in self.hosts}
+        return value.lower() in {h.lower() for h in self.hosts} or value.split(":")[0].lower() in {
+            h.split(":")[0].lower() for h in self.hosts
+        }
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -45,7 +47,9 @@ class LocalApiProtectionMiddleware(BaseHTTPMiddleware):
                 if origin:
                     parsed = urlparse(origin)
                     if not self._host_ok(parsed.netloc):
-                        return JSONResponse({"detail": "Cross-origin requests are not allowed"}, status_code=403)
+                        return JSONResponse(
+                            {"detail": "Cross-origin requests are not allowed"}, status_code=403
+                        )
                 if request.headers.get(CSRF_HEADER, "").upper() != CSRF_VALUE:
                     return JSONResponse({"detail": f"Missing {CSRF_HEADER} header"}, status_code=403)
         response = await call_next(request)

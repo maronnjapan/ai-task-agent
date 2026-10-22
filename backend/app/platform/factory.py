@@ -8,7 +8,9 @@ from pathlib import Path
 from app.platform.base import PlatformAdapter
 
 
-def detect_platform_name(system: str | None = None, proc_version: str | None = None, env: dict | None = None) -> str:
+def detect_platform_name(
+    system: str | None = None, proc_version: str | None = None, env: dict | None = None
+) -> str:
     env = env if env is not None else os.environ
     override = env.get("AIWM_PLATFORM")
     if override:

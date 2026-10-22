@@ -10,7 +10,15 @@ from app.context import AppContext
 from app.integrations.mcp.adapters import list_adapters
 from app.integrations.mcp.config import ConnectionConfig
 from app.schemas.common import Message
-from app.schemas.integrations import AdapterPresetOut, ConnectionTestOut, IntegrationCreate, IntegrationOut, IntegrationUpdate, ToolOut, ToolPermissionIn
+from app.schemas.integrations import (
+    AdapterPresetOut,
+    ConnectionTestOut,
+    IntegrationCreate,
+    IntegrationOut,
+    IntegrationUpdate,
+    ToolOut,
+    ToolPermissionIn,
+)
 from app.services.integration_service import IntegrationService
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
@@ -40,25 +48,48 @@ def presets():
     result = []
     for adapter in list_adapters():
         preset = adapter.preset()
-        result.append(AdapterPresetOut(adapter=preset.adapter, label=preset.label, description=preset.description, transport=preset.transport, command=preset.command, args=preset.args, url=preset.url, auth_type=preset.auth_type, auth_config=preset.auth_config, env_hints=preset.env_hints, tool_permissions=[ToolPermissionIn(**p) for p in preset.tool_permissions]))
+        result.append(
+            AdapterPresetOut(
+                adapter=preset.adapter,
+                label=preset.label,
+                description=preset.description,
+                transport=preset.transport,
+                command=preset.command,
+                args=preset.args,
+                url=preset.url,
+                auth_type=preset.auth_type,
+                auth_config=preset.auth_config,
+                env_hints=preset.env_hints,
+                tool_permissions=[ToolPermissionIn(**p) for p in preset.tool_permissions],
+            )
+        )
     return result
 
 
 @router.post("", response_model=IntegrationOut, status_code=201)
-def create_integration(data: IntegrationCreate, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
+def create_integration(
+    data: IntegrationCreate, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)
+):
     service = IntegrationService(session, ctx.secret_store)
     row = service.create(data)
     return _out(service, ctx, row)
 
 
 @router.get("/{connection_id}", response_model=IntegrationOut)
-def get_integration(connection_id: str, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
+def get_integration(
+    connection_id: str, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)
+):
     service = IntegrationService(session, ctx.secret_store)
     return _out(service, ctx, service.get(connection_id))
 
 
 @router.patch("/{connection_id}", response_model=IntegrationOut)
-def update_integration(connection_id: str, data: IntegrationUpdate, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
+def update_integration(
+    connection_id: str,
+    data: IntegrationUpdate,
+    session: Session = Depends(get_session),
+    ctx: AppContext = Depends(get_ctx),
+):
     service = IntegrationService(session, ctx.secret_store)
     row = service.update(connection_id, data)
     session.commit()
@@ -68,7 +99,9 @@ def update_integration(connection_id: str, data: IntegrationUpdate, session: Ses
 
 
 @router.delete("/{connection_id}", response_model=Message)
-def delete_integration(connection_id: str, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
+def delete_integration(
+    connection_id: str, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)
+):
     IntegrationService(session, ctx.secret_store).delete(connection_id)
     session.commit()
     if ctx.mcp_registry is not None:
@@ -77,16 +110,26 @@ def delete_integration(connection_id: str, session: Session = Depends(get_sessio
 
 
 @router.post("/{connection_id}/test", response_model=ConnectionTestOut)
-async def test_integration(connection_id: str, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
+async def test_integration(
+    connection_id: str, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)
+):
     row = IntegrationService(session, ctx.secret_store).get(connection_id)
     config = ConnectionConfig.from_model(row)
     session.close()
     result = await _registry(ctx).test_connection(config)
-    return ConnectionTestOut(ok=result["ok"], message=result["message"], tools=[ToolOut(**t) for t in result["tools"]], server_name=result.get("server_name"), duration_ms=result.get("duration_ms", 0))
+    return ConnectionTestOut(
+        ok=result["ok"],
+        message=result["message"],
+        tools=[ToolOut(**t) for t in result["tools"]],
+        server_name=result.get("server_name"),
+        duration_ms=result.get("duration_ms", 0),
+    )
 
 
 @router.get("/{connection_id}/tools", response_model=list[ToolOut])
-async def integration_tools(connection_id: str, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
+async def integration_tools(
+    connection_id: str, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)
+):
     IntegrationService(session, ctx.secret_store).get(connection_id)
     session.close()
     try:
@@ -105,9 +148,13 @@ def oauth_start(connection_id: str, ctx: AppContext = Depends(get_ctx)):
 
 
 @router.get("/oauth/callback")
-async def oauth_callback(state: str, code: str | None = None, error: str | None = None, ctx: AppContext = Depends(get_ctx)):
+async def oauth_callback(
+    state: str, code: str | None = None, error: str | None = None, ctx: AppContext = Depends(get_ctx)
+):
     if error or not code:
-        return HTMLResponse(f"<h1>認証に失敗しました</h1><p>{error or 'code がありません'}</p>", status_code=400)
+        return HTMLResponse(
+            f"<h1>認証に失敗しました</h1><p>{error or 'code がありません'}</p>", status_code=400
+        )
     try:
         connection_id = await _registry(ctx).complete_oauth(state, code)
     except Exception as exc:  # noqa: BLE001

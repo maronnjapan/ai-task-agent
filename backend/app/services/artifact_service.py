@@ -42,7 +42,9 @@ class ArtifactService:
     def list_for_plan(self, plan_id: str) -> list[TaskArtifact]:
         return list(
             self.session.execute(
-                select(TaskArtifact).where(TaskArtifact.execution_plan_id == plan_id).order_by(TaskArtifact.created_at)
+                select(TaskArtifact)
+                .where(TaskArtifact.execution_plan_id == plan_id)
+                .order_by(TaskArtifact.created_at)
             ).scalars()
         )
 
@@ -50,7 +52,11 @@ class ArtifactService:
         stmt = select(TaskArtifact)
         if status:
             stmt = stmt.where(TaskArtifact.status == status)
-        return list(self.session.execute(stmt.order_by(TaskArtifact.updated_at.desc()).limit(limit).offset(offset)).scalars())
+        return list(
+            self.session.execute(
+                stmt.order_by(TaskArtifact.updated_at.desc()).limit(limit).offset(offset)
+            ).scalars()
+        )
 
     def linked_task_ids(self, artifact: TaskArtifact) -> list[str]:
         ids = [link.task_id for link in artifact.task_links]
@@ -71,7 +77,9 @@ class ArtifactService:
 
     def _version(self, artifact: TaskArtifact, version: int) -> ArtifactVersion:
         row = self.session.execute(
-            select(ArtifactVersion).where(ArtifactVersion.artifact_id == artifact.id, ArtifactVersion.version == version)
+            select(ArtifactVersion).where(
+                ArtifactVersion.artifact_id == artifact.id, ArtifactVersion.version == version
+            )
         ).scalar_one_or_none()
         if row is None:
             raise NotFoundError("Artifact version not found")
@@ -100,7 +108,9 @@ class ArtifactService:
         # avoid collisions in the same directory
         existing = {
             a.file_path.split("/")[-1].rsplit("-v", 1)[0]
-            for a in self.session.execute(select(TaskArtifact).where(TaskArtifact.file_path.like(f"{directory}/%"))).scalars()
+            for a in self.session.execute(
+                select(TaskArtifact).where(TaskArtifact.file_path.like(f"{directory}/%"))
+            ).scalars()
         }
         base = slug
         counter = 2
@@ -121,13 +131,19 @@ class ArtifactService:
         )
         self.session.add(artifact)
         self.session.flush()
-        self.session.add(ArtifactVersion(artifact_id=artifact.id, version=1, file_path=relative, created_by=actor, change_note="初版"))
+        self.session.add(
+            ArtifactVersion(
+                artifact_id=artifact.id, version=1, file_path=relative, created_by=actor, change_note="初版"
+            )
+        )
         for tid in related_task_ids or []:
             if tid and tid != task_id and self.session.get(Task, tid) is not None:
                 self.session.add(ArtifactTaskLink(artifact_id=artifact.id, task_id=tid))
         self.add_sources(artifact, sources or [])
         self.session.flush()
-        self.audit.record("artifact.created", "artifact", artifact.id, actor, {"title": title, "task_id": task_id})
+        self.audit.record(
+            "artifact.created", "artifact", artifact.id, actor, {"title": title, "task_id": task_id}
+        )
         self._publish("artifact.created", artifact)
         return artifact
 
@@ -151,22 +167,34 @@ class ArtifactService:
         artifact.version = new_version
         artifact.file_path = relative
         artifact.updated_at = now_iso()
-        if actor == Actor.AI and artifact.status in (ArtifactStatus.APPROVED, ArtifactStatus.REVISION_REQUESTED):
+        if actor == Actor.AI and artifact.status in (
+            ArtifactStatus.APPROVED,
+            ArtifactStatus.REVISION_REQUESTED,
+        ):
             artifact.status = ArtifactStatus.DRAFT
         self.session.add(
-            ArtifactVersion(artifact_id=artifact.id, version=new_version, file_path=relative, created_by=actor, change_note=change_note)
+            ArtifactVersion(
+                artifact_id=artifact.id,
+                version=new_version,
+                file_path=relative,
+                created_by=actor,
+                change_note=change_note,
+            )
         )
         if sources:
             self.add_sources(artifact, sources)
         self.session.flush()
-        self.audit.record("artifact.updated", "artifact", artifact.id, actor, {"version": new_version, "note": change_note})
+        self.audit.record(
+            "artifact.updated", "artifact", artifact.id, actor, {"version": new_version, "note": change_note}
+        )
         self._publish("artifact.updated", artifact)
         return artifact
 
     def restore(self, artifact_id: str, version: int, actor: str = Actor.USER) -> TaskArtifact:
-        artifact = self.get(artifact_id)
         content = self.read_content(artifact_id, version)
-        return self.update_content(artifact_id, content, change_note=f"バージョン{version}を復元", actor=actor)
+        return self.update_content(
+            artifact_id, content, change_note=f"バージョン{version}を復元", actor=actor
+        )
 
     def versions(self, artifact_id: str) -> list[ArtifactVersion]:
         artifact = self.get(artifact_id)
@@ -207,7 +235,12 @@ class ArtifactService:
 
         for tid in self.linked_task_ids(artifact):
             self.session.add(
-                TaskContext(task_id=tid, context=f"成果物「{artifact.title}」への修正依頼: {instructions}", source="user_revision", status="open")
+                TaskContext(
+                    task_id=tid,
+                    context=f"成果物「{artifact.title}」への修正依頼: {instructions}",
+                    source="user_revision",
+                    status="open",
+                )
             )
         self.session.flush()
         return artifact
@@ -242,5 +275,10 @@ class ArtifactService:
         if self.broker is not None:
             self.broker.publish(
                 event_type,
-                {"artifact_id": artifact.id, "task_id": artifact.task_id, "status": artifact.status, "version": artifact.version},
+                {
+                    "artifact_id": artifact.id,
+                    "task_id": artifact.task_id,
+                    "status": artifact.status,
+                    "version": artifact.version,
+                },
             )

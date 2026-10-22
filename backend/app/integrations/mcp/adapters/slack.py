@@ -13,8 +13,26 @@ class SlackAdapter(ServiceAdapter):
     label = "Slack"
     description = "Search Slack messages, threads and channels through a Slack MCP server."
     search_tool_candidates = ("search_messages", "conversations_search_messages", "slack_search", "search")
-    read_only_tools = ("list_channels", "get_channel_history", "get_thread_replies", "get_users", "get_user_profile", "search_messages", "conversations_history", "conversations_replies", "channels_list", "users_list")
-    external_write_tools = ("post_message", "reply_to_thread", "add_reaction", "conversations_add_message", "chat_postmessage", "send_message")
+    read_only_tools = (
+        "list_channels",
+        "get_channel_history",
+        "get_thread_replies",
+        "get_users",
+        "get_user_profile",
+        "search_messages",
+        "conversations_history",
+        "conversations_replies",
+        "channels_list",
+        "users_list",
+    )
+    external_write_tools = (
+        "post_message",
+        "reply_to_thread",
+        "add_reaction",
+        "conversations_add_message",
+        "chat_postmessage",
+        "send_message",
+    )
     tool_name_aliases = {"search": "slack_search_messages"}
 
     def preset(self) -> AdapterPreset:

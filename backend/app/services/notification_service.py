@@ -55,16 +55,26 @@ class NotificationService:
         self.broker = broker
         self.audit = AuditService(session)
 
-    def list(self, unread_only: bool = False, limit: int = 50, offset: int = 0) -> tuple[list[Notification], int]:
+    def list(
+        self, unread_only: bool = False, limit: int = 50, offset: int = 0
+    ) -> tuple[list[Notification], int]:
         stmt = select(Notification)
         if unread_only:
             stmt = stmt.where(Notification.status == "unread")
         total = self.session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
-        rows = self.session.execute(stmt.order_by(Notification.created_at.desc()).limit(limit).offset(offset)).scalars().all()
+        rows = (
+            self.session.execute(stmt.order_by(Notification.created_at.desc()).limit(limit).offset(offset))
+            .scalars()
+            .all()
+        )
         return list(rows), int(total)
 
     def unread_count(self) -> int:
-        return int(self.session.execute(select(func.count(Notification.id)).where(Notification.status == "unread")).scalar_one())
+        return int(
+            self.session.execute(
+                select(func.count(Notification.id)).where(Notification.status == "unread")
+            ).scalar_one()
+        )
 
     def get(self, notification_id: str) -> Notification:
         row = self.session.get(Notification, notification_id)
@@ -91,15 +101,23 @@ class NotificationService:
         if dedupe_key and self.settings.dedupe_window_minutes > 0:
             since = (now - timedelta(minutes=self.settings.dedupe_window_minutes)).isoformat()
             dup = self.session.execute(
-                select(Notification.id).where(Notification.dedupe_key == dedupe_key, Notification.created_at >= since).limit(1)
+                select(Notification.id)
+                .where(Notification.dedupe_key == dedupe_key, Notification.created_at >= since)
+                .limit(1)
             ).scalar_one_or_none()
             if dup:
                 return "duplicate"
         # Deterministic reminders (scheduler) are de-duplicated per task/day instead of rate limited.
-        if self.settings.min_interval_seconds > 0 and level != NotificationLevel.HIGH and source not in RATE_LIMIT_EXEMPT:
+        if (
+            self.settings.min_interval_seconds > 0
+            and level != NotificationLevel.HIGH
+            and source not in RATE_LIMIT_EXEMPT
+        ):
             since = (now - timedelta(seconds=self.settings.min_interval_seconds)).isoformat()
             recent = self.session.execute(
-                select(Notification.id).where(Notification.created_at >= since, Notification.source.notin_(list(RATE_LIMIT_EXEMPT))).limit(1)
+                select(Notification.id)
+                .where(Notification.created_at >= since, Notification.source.notin_(list(RATE_LIMIT_EXEMPT)))
+                .limit(1)
             ).scalar_one_or_none()
             if recent:
                 return "rate_limited"
@@ -120,7 +138,9 @@ class NotificationService:
         reason = None if force else self._suppressed(dedupe_key, level, source)
         if reason:
             log.debug("notification suppressed (%s): %s", reason, title)
-            self.audit.record("notification.suppressed", "notification", None, "system", {"title": title, "reason": reason})
+            self.audit.record(
+                "notification.suppressed", "notification", None, "system", {"title": title, "reason": reason}
+            )
             return None
         row = Notification(
             title=title.strip()[:200],
@@ -133,11 +153,19 @@ class NotificationService:
         )
         self.session.add(row)
         self.session.flush()
-        self.audit.record("notification.created", "notification", row.id, source, {"title": row.title, "level": level})
+        self.audit.record(
+            "notification.created", "notification", row.id, source, {"title": row.title, "level": level}
+        )
         if self.broker:
             self.broker.publish(
                 "notification.created",
-                {"notification_id": row.id, "title": row.title, "body": row.body, "level": level, "task_id": task_id},
+                {
+                    "notification_id": row.id,
+                    "title": row.title,
+                    "body": row.body,
+                    "level": level,
+                    "task_id": task_id,
+                },
             )
         if self._should_deliver_desktop(level):
             try:
@@ -157,16 +185,24 @@ class NotificationService:
         if _LEVEL_RANK.get(level, 1) < threshold:
             return False
         local_now = datetime.now().astimezone()
-        if in_quiet_hours(local_now, self.settings.quiet_hours_start, self.settings.quiet_hours_end) and level != "high":
+        if (
+            in_quiet_hours(local_now, self.settings.quiet_hours_start, self.settings.quiet_hours_end)
+            and level != "high"
+        ):
             return False
         return True
 
     def recent_summary(self, hours: int = 24, limit: int = 10) -> list[dict]:
         since = (utcnow() - timedelta(hours=hours)).isoformat()
         rows = self.session.execute(
-            select(Notification).where(Notification.created_at >= since).order_by(Notification.created_at.desc()).limit(limit)
+            select(Notification)
+            .where(Notification.created_at >= since)
+            .order_by(Notification.created_at.desc())
+            .limit(limit)
         ).scalars()
-        return [{"title": r.title, "level": r.level, "status": r.status, "created_at": r.created_at} for r in rows]
+        return [
+            {"title": r.title, "level": r.level, "status": r.status, "created_at": r.created_at} for r in rows
+        ]
 
     def last_notification_at(self, dedupe_prefix: str | None = None) -> datetime | None:
         stmt = select(func.max(Notification.created_at))

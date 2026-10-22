@@ -42,7 +42,9 @@ class LinuxPlatformAdapter(PlatformAdapter):
 
     def render_service(self, spec: AutostartSpec) -> str:
         exec_start = " ".join(_sh_quote(part) for part in spec.command)
-        env_lines = "".join(f"Environment={key}={_sh_quote(value)}\n" for key, value in spec.environment.items())
+        env_lines = "".join(
+            f"Environment={key}={_sh_quote(value)}\n" for key, value in spec.environment.items()
+        )
         return (
             "[Unit]\n"
             "Description=Autonomous AI Work Manager\n"

@@ -47,7 +47,13 @@ class SchedulerService:
         )
         self.session.add(action)
         self.session.flush()
-        AuditService(self.session).record("schedule.created", "scheduled_action", action.id, "system", {"action_type": action_type, "scheduled_at": scheduled_at})
+        AuditService(self.session).record(
+            "schedule.created",
+            "scheduled_action",
+            action.id,
+            "system",
+            {"action_type": action_type, "scheduled_at": scheduled_at},
+        )
         return action
 
     def pending(self, action_type: str | None = None, task_id: str | None = None) -> list[ScheduledAction]:
@@ -70,7 +76,10 @@ class SchedulerService:
 
     def next_due_at(self) -> datetime | None:
         row = self.session.execute(
-            select(ScheduledAction.scheduled_at).where(ScheduledAction.status == "pending").order_by(ScheduledAction.scheduled_at).limit(1)
+            select(ScheduledAction.scheduled_at)
+            .where(ScheduledAction.status == "pending")
+            .order_by(ScheduledAction.scheduled_at)
+            .limit(1)
         ).scalar_one_or_none()
         return parse_iso(row) if row else None
 
@@ -83,7 +92,9 @@ class SchedulerService:
     def reset_running(self) -> int:
         """Recovery: actions left in ``running`` by a crash are retried."""
         count = 0
-        for row in self.session.execute(select(ScheduledAction).where(ScheduledAction.status == "running")).scalars():
+        for row in self.session.execute(
+            select(ScheduledAction).where(ScheduledAction.status == "running")
+        ).scalars():
             row.status = "pending"
             count += 1
         self.session.flush()
@@ -98,7 +109,11 @@ class SchedulerService:
         return True
 
     def list(self, limit: int = 100) -> list[ScheduledAction]:
-        return list(self.session.execute(select(ScheduledAction).order_by(ScheduledAction.scheduled_at.desc()).limit(limit)).scalars())
+        return list(
+            self.session.execute(
+                select(ScheduledAction).order_by(ScheduledAction.scheduled_at.desc()).limit(limit)
+            ).scalars()
+        )
 
     @staticmethod
     def payload_of(action: ScheduledAction) -> dict:
