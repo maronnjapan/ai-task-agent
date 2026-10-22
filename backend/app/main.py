@@ -140,6 +140,8 @@ def create_app(ctx: AppContext | None = None, serve_frontend: bool = True) -> Fa
 
         @app.get("/{full_path:path}", include_in_schema=False)
         async def spa(full_path: str):
+            if full_path.startswith("api/"):
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
             candidate = (FRONTEND_DIST / full_path).resolve()
             if full_path and candidate.is_file() and FRONTEND_DIST.resolve() in candidate.parents:
                 return FileResponse(candidate)
