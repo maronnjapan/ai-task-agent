@@ -1,11 +1,15 @@
 """macOS Keychain Secret Provider (SPEC 4.3).
 
 The Keychain is accessed through the ``security`` command line tool so that no
-native extension is required. The command runner is injectable for tests.
+native extension is required. Secret values are never passed as process
+arguments (SPEC 4.9): writes use ``security -i`` which reads commands from
+standard input, and reads take the value from standard output.
+The command runner is injectable for tests.
 """
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from collections.abc import Callable
 
@@ -34,12 +38,12 @@ class MacOSKeychainSecretProvider:
         return value or None
 
     def set_secret(self, name: str, value: str) -> None:
-        # ``-U`` updates an existing item instead of failing; the value is passed on
-        # the command line of a *local* helper process only, never logged.
-        result = self._run(
-            ["security", "add-generic-password", "-s", self.service, "-a", name, "-w", value, "-U"],
-            None,
-        )
+        if "\n" in value or "\r" in value:
+            raise ValueError("Secret values must not contain line breaks")
+        # ``-U`` updates an existing item. The command (with the secret) is sent
+        # over stdin to ``security -i`` so the value never appears in ``ps``.
+        command = f"add-generic-password -s {shlex.quote(self.service)} -a {shlex.quote(name)} -U -w {shlex.quote(value)}\n"
+        result = self._run(["security", "-i"], command)
         if result.returncode != 0:
             raise RuntimeError(f"Keychain write failed for {name}: {(result.stderr or '').strip()}")
 

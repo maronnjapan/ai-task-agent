@@ -66,10 +66,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
         return 1
     pid = int(paths.pid_file.read_text().strip() or 0)
     try:
-        if os.name == "nt":  # pragma: no cover
-            os.kill(pid, signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]
-        else:
-            os.kill(pid, signal.SIGTERM)
+        os.kill(pid, signal.SIGTERM)  # TerminateProcess on Windows, SIGTERM elsewhere
         print(f"Sent stop signal to pid {pid}.")
         return 0
     except ProcessLookupError:

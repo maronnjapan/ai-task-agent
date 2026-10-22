@@ -125,6 +125,17 @@ def test_artifact_endpoints(client: TestClient, ctx: AppContext):
     assert client.get("/api/artifacts", params={"status": "revision_requested"}).json()[0]["id"] == aid
     opened = client.post(f"/api/artifacts/{aid}/open").json()
     assert opened["data"]["path"].endswith("-v3.md")
+    exported = client.get(f"/api/artifacts/{aid}/export", params={"format": "html", "save": True})
+    assert (
+        exported.status_code == 200
+        and "<h1>設計</h1>" in exported.text
+        and exported.headers["content-type"].startswith("text/html")
+    )
+    assert list(ctx.paths.exports.glob("*.html"))
+    assert (
+        client.get(f"/api/artifacts/{aid}/export", params={"format": "text"}).text.strip().startswith("設計")
+    )
+    assert client.get(f"/api/artifacts/{aid}/export", params={"format": "docx"}).status_code == 400
 
 
 def test_settings_api_keys_and_system(client: TestClient, ctx: AppContext, tmp_path: Path):

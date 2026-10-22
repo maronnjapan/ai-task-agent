@@ -47,17 +47,25 @@ def test_dotenv_env_fallback(tmp_path: Path, monkeypatch):
 
 def test_keychain_provider_with_fake_security_cli():
     store: dict[str, str] = {}
+    seen_args: list[list[str]] = []
 
     def runner(args, input_text=None):
+        seen_args.append(list(args))
+        if args[1] == "-i":
+            # interactive mode: one command per line on stdin
+            import shlex
+
+            parts = shlex.split(input_text.strip())
+            assert parts[0] == "add-generic-password"
+            account = parts[parts.index("-a") + 1]
+            store[account] = parts[parts.index("-w") + 1]
+            return subprocess.CompletedProcess(args, 0, "", "")
         cmd = args[1]
         account = args[args.index("-a") + 1]
         if cmd == "find-generic-password":
             if account in store:
                 return subprocess.CompletedProcess(args, 0, store[account] + "\n", "")
             return subprocess.CompletedProcess(args, 44, "", "The specified item could not be found")
-        if cmd == "add-generic-password":
-            store[account] = args[args.index("-w") + 1]
-            return subprocess.CompletedProcess(args, 0, "", "")
         if cmd == "delete-generic-password":
             store.pop(account, None)
             return subprocess.CompletedProcess(args, 0, "", "")
@@ -65,10 +73,14 @@ def test_keychain_provider_with_fake_security_cli():
 
     provider = MacOSKeychainSecretProvider(runner=runner)
     assert provider.get_secret("OPENAI_API_KEY") is None
-    provider.set_secret("OPENAI_API_KEY", "sk-keychain")
-    assert provider.get_secret("OPENAI_API_KEY") == "sk-keychain"
+    provider.set_secret("OPENAI_API_KEY", "sk-key chain'quote")
+    assert provider.get_secret("OPENAI_API_KEY") == "sk-key chain'quote"
+    # the secret never appears in process arguments (SPEC 4.9)
+    assert all("sk-key" not in " ".join(call) for call in seen_args)
     provider.delete_secret("OPENAI_API_KEY")
     assert provider.get_secret("OPENAI_API_KEY") is None
+    with pytest.raises(ValueError):
+        provider.set_secret("X", "multi\nline")
 
 
 def test_select_backend_auto(tmp_path: Path):

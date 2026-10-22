@@ -145,6 +145,40 @@ def request_revision(
     return artifact_out(service, artifact)
 
 
+@router.get("/{artifact_id}/export")
+def export_artifact(
+    artifact_id: str,
+    format: str = Query(default="markdown"),
+    save: bool = Query(default=False, description="also write the file to the exports directory"),
+    session: Session = Depends(get_session),
+    ctx: AppContext = Depends(get_ctx),
+):
+    """Export the current version (markdown | text | html, extensible via ``register_exporter``)."""
+    from fastapi import HTTPException
+    from fastapi.responses import Response
+
+    from app.infrastructure.artifact_store import slugify
+    from app.services.exporters import export
+
+    service = _service(session, ctx)
+    artifact = service.get(artifact_id)
+    try:
+        result = export(format, artifact.title, service.read_content(artifact_id))
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    filename = f"{slugify(artifact.title)}-v{artifact.version}{result.extension}"
+    if save:
+        ctx.paths.exports.mkdir(parents=True, exist_ok=True)
+        (ctx.paths.exports / filename).write_bytes(result.content)
+    return Response(
+        content=result.content,
+        media_type=result.media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{__import__('urllib.parse').parse.quote(filename)}"
+        },
+    )
+
+
 @router.post("/{artifact_id}/open", response_model=Message)
 def open_file(artifact_id: str, session: Session = Depends(get_session), ctx: AppContext = Depends(get_ctx)):
     service = _service(session, ctx)
